@@ -1,15 +1,29 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../domain/models/custom_protocol_rule.dart';
+import '../../../../domain/models/endpoint_rule.dart';
 import '../../../../domain/models/packet_record.dart';
+import '../../protocol_library/views/add_protocol_dialog.dart';
+import '../../protocol_library/views/add_endpoint_dialog.dart';
 import '../view_models/inspector_view_model.dart';
 
-class DualModeFilterBar extends StatelessWidget {
+class DualModeFilterBar extends StatefulWidget {
   const DualModeFilterBar({super.key});
+
+  @override
+  State<DualModeFilterBar> createState() => _DualModeFilterBarState();
+}
+
+class _DualModeFilterBarState extends State<DualModeFilterBar> {
+  bool _isExpanded = true;
 
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<InspectorViewModel>();
     final isTriage = vm.isTriageMode;
+    final hasActiveQuickFilters = vm.selectedProtocolPills.isNotEmpty ||
+        vm.selectedSenderKeys.isNotEmpty ||
+        vm.selectedReceiverKeys.isNotEmpty;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -21,50 +35,88 @@ class DualModeFilterBar extends StatelessWidget {
           ),
         ),
       ),
-      child: Row(
-        children: [
-          // Mode Toggle Switch
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: Theme.of(context).colorScheme.surface,
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                color: Theme.of(context).colorScheme.outlineVariant,
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+      child: isTriage
+          ? Row(
               children: [
-                Icon(
-                  isTriage ? Icons.shield_outlined : Icons.filter_alt_outlined,
-                  size: 16,
-                  color: Theme.of(context).colorScheme.primary,
+                _buildModeSwitch(context, vm),
+                const SizedBox(width: 16),
+                const VerticalDivider(width: 1, indent: 6, endIndent: 6),
+                const SizedBox(width: 16),
+                Expanded(child: _buildTriageControls(context, vm)),
+              ],
+            )
+          : Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Top control bar
+                Row(
+                  children: [
+                    _buildModeSwitch(context, vm),
+                    const SizedBox(width: 12),
+                    if (hasActiveQuickFilters) ...[
+                      ActionChip(
+                        avatar: const Icon(Icons.close, size: 14),
+                        label: const Text('Clear All Filters'),
+                        onPressed: () => vm.clearAllQuickFilters(),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
+                    const Spacer(),
+                    Tooltip(
+                      message: _isExpanded ? 'Collapse filter rows' : 'Expand 3-row filters',
+                      child: IconButton(
+                        icon: Icon(_isExpanded ? Icons.unfold_less : Icons.unfold_more, size: 18),
+                        onPressed: () => setState(() => _isExpanded = !_isExpanded),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 6),
-                Text(
-                  isTriage ? 'Baseline Triage' : 'Quick-Filter Pills',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                ),
-                const SizedBox(width: 6),
-                Switch(
-                  value: isTriage,
-                  onChanged: (val) => vm.setTriageMode(val),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
+                const SizedBox(height: 8),
+
+                // Row 1: Protocols
+                _buildProtocolFilterRow(context, vm),
+
+                // Row 2 & 3 when expanded
+                if (_isExpanded) ...[
+                  const SizedBox(height: 6),
+                  _buildSenderFilterRow(context, vm),
+                  const SizedBox(height: 6),
+                  _buildReceiverFilterRow(context, vm),
+                ],
               ],
             ),
+    );
+  }
+
+  Widget _buildModeSwitch(BuildContext context, InspectorViewModel vm) {
+    final isTriage = vm.isTriageMode;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outlineVariant,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            isTriage ? Icons.shield_outlined : Icons.filter_alt_outlined,
+            size: 16,
+            color: Theme.of(context).colorScheme.primary,
           ),
-
-          const SizedBox(width: 16),
-          const VerticalDivider(width: 1, indent: 6, endIndent: 6),
-          const SizedBox(width: 16),
-
-          // Dynamic Section based on Active Mode
-          Expanded(
-            child: isTriage
-                ? _buildTriageControls(context, vm)
-                : _buildQuickFilterPills(context, vm),
+          const SizedBox(width: 6),
+          Text(
+            isTriage ? 'Baseline Triage' : 'Quick-Filter Pills',
+            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+          const SizedBox(width: 6),
+          Switch(
+            value: isTriage,
+            onChanged: (val) => vm.setTriageMode(val),
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
         ],
       ),
@@ -165,38 +217,301 @@ class DualModeFilterBar extends StatelessWidget {
     );
   }
 
-  Widget _buildQuickFilterPills(BuildContext context, InspectorViewModel vm) {
-    final protocols = vm.protocolCounts.entries.toList();
+  Widget _buildProtocolFilterRow(BuildContext context, InspectorViewModel vm) {
+    final customRules = vm.customRules;
+    final protocolCounts = vm.protocolCounts;
+    final seenCustomNames = <String>{};
+    final distinctCustomRules = customRules.where((r) => seenCustomNames.add(r.name)).toList();
+    final customRuleNames = distinctCustomRules.map((r) => r.name).toSet();
+
+    // Standard protocols that are not in custom rules, sorted by count descending
+    final standardEntries = protocolCounts.entries
+        .where((e) => !customRuleNames.contains(e.key))
+        .toList();
 
     return Row(
       children: [
-        if (vm.selectedProtocolPills.isNotEmpty) ...[
-          ActionChip(
-            avatar: const Icon(Icons.close, size: 14),
-            label: const Text('Clear All'),
-            onPressed: () => vm.clearProtocolPills(),
+        const Padding(
+          padding: EdgeInsets.only(right: 8.0),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.tune, size: 14, color: Colors.indigoAccent),
+              SizedBox(width: 4),
+              Text('Protocols', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            ],
           ),
-          const SizedBox(width: 8),
-        ],
-
+        ),
         Expanded(
           child: SingleChildScrollView(
             scrollDirection: Axis.horizontal,
             child: Row(
-              children: protocols.map((entry) {
-                final proto = entry.key;
-                final count = entry.value;
-                final isSelected = vm.selectedProtocolPills.contains(proto);
+              children: [
+                // 1. Custom Protocol Library Pills (Always present and prioritized)
+                ...distinctCustomRules.map((rule) {
+                  final count = protocolCounts[rule.name] ?? 0;
+                  final isSelected = vm.selectedProtocolPills.contains(rule.name);
 
-                return Padding(
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6.0),
+                    child: FilterChip(
+                      avatar: CircleAvatar(
+                        radius: 5,
+                        backgroundColor: Color(rule.colorHex),
+                      ),
+                      label: Text('${rule.name} ($count)'),
+                      selected: isSelected,
+                      onSelected: (_) => vm.toggleProtocolPill(rule.name),
+                      tooltip: 'Custom Protocol: ${rule.name}',
+                    ),
+                  );
+                }),
+
+                // 2. Add Protocol Chip Button
+                Padding(
                   padding: const EdgeInsets.only(right: 6.0),
-                  child: FilterChip(
-                    label: Text('$proto ($count)'),
-                    selected: isSelected,
-                    onSelected: (_) => vm.toggleProtocolPill(proto),
+                  child: ActionChip(
+                    avatar: const Icon(Icons.add, size: 14),
+                    label: const Text('Add Protocol'),
+                    tooltip: 'Add new custom protocol to library and filter',
+                    onPressed: () async {
+                      final newRule = await showDialog<CustomProtocolRule>(
+                        context: context,
+                        builder: (ctx) => const AddProtocolDialog(),
+                      );
+                      if (newRule != null) {
+                        vm.addCustomProtocol(newRule);
+                      }
+                    },
                   ),
-                );
-              }).toList(),
+                ),
+
+                if (distinctCustomRules.isNotEmpty && standardEntries.isNotEmpty) ...[
+                  const SizedBox(width: 4),
+                  Container(
+                    height: 18,
+                    width: 1,
+                    color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+
+                // 3. Standard / Discovered Protocol Pills
+                ...standardEntries.map((entry) {
+                  final proto = entry.key;
+                  final count = entry.value;
+                  final isSelected = vm.selectedProtocolPills.contains(proto);
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6.0),
+                    child: FilterChip(
+                      label: Text('$proto ($count)'),
+                      selected: isSelected,
+                      onSelected: (_) => vm.toggleProtocolPill(proto),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSenderFilterRow(BuildContext context, InspectorViewModel vm) {
+    final senders = vm.senders;
+    final senderCounts = vm.senderCounts;
+    final senderLibraryKeys = senders.map((s) => s.filterKey).toSet();
+    final senderLibraryIps = senders.map((s) => s.ipAddress).toSet();
+
+    final discoveredEntries = senderCounts.entries
+        .where((e) => !senderLibraryKeys.contains(e.key) && !senderLibraryIps.contains(e.key))
+        .toList();
+
+    return Row(
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(right: 8.0),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.arrow_upward, size: 14, color: Colors.blueAccent),
+              SizedBox(width: 4),
+              Text('Senders', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            ],
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                // Sender Library Pills
+                ...senders.map((rule) {
+                  final count = senderCounts[rule.filterKey] ?? 0;
+                  final isSelected = vm.selectedSenderKeys.contains(rule.filterKey);
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6.0),
+                    child: FilterChip(
+                      avatar: CircleAvatar(
+                        radius: 5,
+                        backgroundColor: Color(rule.colorHex),
+                      ),
+                      label: Text('${rule.name} ($count)'),
+                      selected: isSelected,
+                      onSelected: (_) => vm.toggleSenderPill(rule.filterKey),
+                      tooltip: 'Sender: ${rule.displayName}',
+                    ),
+                  );
+                }),
+
+                // Add Sender Chip Button
+                Padding(
+                  padding: const EdgeInsets.only(right: 6.0),
+                  child: ActionChip(
+                    avatar: const Icon(Icons.add, size: 14),
+                    label: const Text('Add Sender'),
+                    tooltip: 'Add new device to Sender library',
+                    onPressed: () async {
+                      final newRule = await showDialog<EndpointRule>(
+                        context: context,
+                        builder: (ctx) => const AddEndpointDialog(type: EndpointType.sender),
+                      );
+                      if (newRule != null) {
+                        vm.addSender(newRule);
+                      }
+                    },
+                  ),
+                ),
+
+                if (senders.isNotEmpty && discoveredEntries.isNotEmpty) ...[
+                  const SizedBox(width: 4),
+                  Container(
+                    height: 18,
+                    width: 1,
+                    color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+
+                // Discovered Source IP Pills
+                ...discoveredEntries.map((entry) {
+                  final ip = entry.key;
+                  final count = entry.value;
+                  final isSelected = vm.selectedSenderKeys.contains(ip);
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6.0),
+                    child: FilterChip(
+                      label: Text('$ip ($count)'),
+                      selected: isSelected,
+                      onSelected: (_) => vm.toggleSenderPill(ip),
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildReceiverFilterRow(BuildContext context, InspectorViewModel vm) {
+    final receivers = vm.receivers;
+    final receiverCounts = vm.receiverCounts;
+    final receiverLibraryKeys = receivers.map((r) => r.filterKey).toSet();
+    final receiverLibraryIps = receivers.map((r) => r.ipAddress).toSet();
+
+    final discoveredEntries = receiverCounts.entries
+        .where((e) => !receiverLibraryKeys.contains(e.key) && !receiverLibraryIps.contains(e.key))
+        .toList();
+
+    return Row(
+      children: [
+        const Padding(
+          padding: EdgeInsets.only(right: 8.0),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.arrow_downward, size: 14, color: Colors.greenAccent),
+              SizedBox(width: 4),
+              Text('Receivers', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            ],
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                // Receiver Library Pills
+                ...receivers.map((rule) {
+                  final count = receiverCounts[rule.filterKey] ?? 0;
+                  final isSelected = vm.selectedReceiverKeys.contains(rule.filterKey);
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6.0),
+                    child: FilterChip(
+                      avatar: CircleAvatar(
+                        radius: 5,
+                        backgroundColor: Color(rule.colorHex),
+                      ),
+                      label: Text('${rule.name} ($count)'),
+                      selected: isSelected,
+                      onSelected: (_) => vm.toggleReceiverPill(rule.filterKey),
+                      tooltip: 'Receiver: ${rule.displayName}',
+                    ),
+                  );
+                }),
+
+                // Add Receiver Chip Button
+                Padding(
+                  padding: const EdgeInsets.only(right: 6.0),
+                  child: ActionChip(
+                    avatar: const Icon(Icons.add, size: 14),
+                    label: const Text('Add Receiver'),
+                    tooltip: 'Add new device / multicast group to Receiver library',
+                    onPressed: () async {
+                      final newRule = await showDialog<EndpointRule>(
+                        context: context,
+                        builder: (ctx) => const AddEndpointDialog(type: EndpointType.receiver),
+                      );
+                      if (newRule != null) {
+                        vm.addReceiver(newRule);
+                      }
+                    },
+                  ),
+                ),
+
+                if (receivers.isNotEmpty && discoveredEntries.isNotEmpty) ...[
+                  const SizedBox(width: 4),
+                  Container(
+                    height: 18,
+                    width: 1,
+                    color: Theme.of(context).dividerColor.withValues(alpha: 0.3),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+
+                // Discovered Dest IP Pills
+                ...discoveredEntries.map((entry) {
+                  final ip = entry.key;
+                  final count = entry.value;
+                  final isSelected = vm.selectedReceiverKeys.contains(ip);
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6.0),
+                    child: FilterChip(
+                      label: Text('$ip ($count)'),
+                      selected: isSelected,
+                      onSelected: (_) => vm.toggleReceiverPill(ip),
+                    ),
+                  );
+                }),
+              ],
             ),
           ),
         ),

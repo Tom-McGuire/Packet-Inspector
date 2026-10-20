@@ -84,6 +84,20 @@ class PacketRecord {
   double get globalDeltaMs => globalDeltaUs / 1000.0;
   double get streamDeltaMs => streamDeltaUs / 1000.0;
 
+  DateTime get dateTime => DateTime.fromMicrosecondsSinceEpoch(timestampUs);
+
+  String get formattedDateTime {
+    final dt = DateTime.fromMicrosecondsSinceEpoch(timestampUs);
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    final h = dt.hour.toString().padLeft(2, '0');
+    final min = dt.minute.toString().padLeft(2, '0');
+    final s = dt.second.toString().padLeft(2, '0');
+    final ms = dt.millisecond.toString().padLeft(3, '0');
+    return '$y-$m-$d $h:$min:$s.$ms';
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'packet_no': packetNo,

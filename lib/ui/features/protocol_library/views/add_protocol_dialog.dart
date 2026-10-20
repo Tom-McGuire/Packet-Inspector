@@ -5,11 +5,13 @@ import '../../../../domain/models/packet_record.dart';
 class AddProtocolDialog extends StatefulWidget {
   const AddProtocolDialog({
     super.key,
+    this.existingRule,
     this.prefillPacket,
     this.prefillMagicOffset,
     this.prefillMagicHex,
   });
 
+  final CustomProtocolRule? existingRule;
   final PacketRecord? prefillPacket;
   final int? prefillMagicOffset;
   final String? prefillMagicHex;
@@ -27,21 +29,38 @@ class _AddProtocolDialogState extends State<AddProtocolDialog> {
   int _selectedIpProto = 17; // Default UDP
   PortMatchDirection _portDirection = PortMatchDirection.either;
   TriageStatus _defaultTriage = TriageStatus.expected;
-  final int _colorHex = 0xFF9C27B0; // Default Purple
+  int _colorHex = 0xFF9C27B0; // Default Purple
 
   final List<ProtocolFieldSlice> _fieldSlices = [];
 
   @override
   void initState() {
     super.initState();
-    final p = widget.prefillPacket;
-    _nameCtrl = TextEditingController(text: p != null ? 'Custom Proto ${p.detectedProtocol}' : 'My Custom Protocol');
-    _portCtrl = TextEditingController(text: p?.srcPort?.toString() ?? p?.dstPort?.toString() ?? '45820');
-    _magicOffsetCtrl = TextEditingController(text: (widget.prefillMagicOffset ?? 0).toString());
-    _magicHexCtrl = TextEditingController(text: widget.prefillMagicHex ?? '');
+    final rule = widget.existingRule;
+    if (rule != null) {
+      _nameCtrl = TextEditingController(text: rule.name);
+      _portCtrl = TextEditingController(text: rule.port?.toString() ?? '');
+      _magicOffsetCtrl = TextEditingController(text: (rule.magicBytesOffset ?? 0).toString());
+      _magicHexCtrl = TextEditingController(
+        text: rule.magicBytesHex != null
+            ? rule.magicBytesHex!.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ')
+            : '',
+      );
+      _selectedIpProto = rule.ipProtocol ?? 17;
+      _portDirection = rule.portDirection;
+      _defaultTriage = rule.defaultTriageStatus;
+      _colorHex = rule.colorHex;
+      _fieldSlices.addAll(rule.fieldSlices);
+    } else {
+      final p = widget.prefillPacket;
+      _nameCtrl = TextEditingController(text: p != null ? 'Custom Proto ${p.detectedProtocol}' : 'My Custom Protocol');
+      _portCtrl = TextEditingController(text: p?.srcPort?.toString() ?? p?.dstPort?.toString() ?? '45820');
+      _magicOffsetCtrl = TextEditingController(text: (widget.prefillMagicOffset ?? 0).toString());
+      _magicHexCtrl = TextEditingController(text: widget.prefillMagicHex ?? '');
 
-    if (p != null && (p.ipProto == 6 || p.ipProto == 17)) {
-      _selectedIpProto = p.ipProto;
+      if (p != null && (p.ipProto == 6 || p.ipProto == 17)) {
+        _selectedIpProto = p.ipProto;
+      }
     }
   }
 
@@ -71,10 +90,10 @@ class _AddProtocolDialogState extends State<AddProtocolDialog> {
                     radius: 12,
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      'Add Custom Protocol to Library',
-                      style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      widget.existingRule != null ? 'Edit Custom Protocol' : 'Add Custom Protocol to Library',
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -275,7 +294,7 @@ class _AddProtocolDialogState extends State<AddProtocolDialog> {
                   const SizedBox(width: 12),
                   FilledButton(
                     onPressed: _saveRule,
-                    child: const Text('Save & Re-label Capture'),
+                    child: Text(widget.existingRule != null ? 'Save Changes' : 'Save & Re-label Capture'),
                   ),
                 ],
               ),
@@ -389,7 +408,7 @@ class _AddProtocolDialogState extends State<AddProtocolDialog> {
     }
 
     final rule = CustomProtocolRule(
-      id: 'proto_${DateTime.now().millisecondsSinceEpoch}',
+      id: widget.existingRule?.id ?? 'proto_${DateTime.now().millisecondsSinceEpoch}',
       name: name,
       colorHex: _colorHex,
       defaultTriageStatus: _defaultTriage,

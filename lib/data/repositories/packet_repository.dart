@@ -4,6 +4,7 @@ import '../../../domain/models/packet_record.dart';
 import '../../../domain/models/custom_protocol_rule.dart';
 import '../../../domain/models/baseline_profile.dart';
 import '../../../domain/models/timeline_bucket.dart';
+import '../../../domain/models/endpoint_rule.dart';
 import '../services/database/packet_database_service.dart';
 import '../services/parser/pcap_binary_reader.dart';
 import '../services/parser/packet_dissector.dart';
@@ -29,12 +30,16 @@ class PacketRepository {
         _storageService = storageService ?? ProtocolLibraryService() {
     _customRules = _storageService.loadCustomProtocols();
     _baselineProfile = _storageService.loadBaselineProfile();
+    _senders = _storageService.loadSenders();
+    _receivers = _storageService.loadReceivers();
   }
 
   PacketDatabaseService _dbService;
   final ProtocolLibraryService _storageService;
 
   List<CustomProtocolRule> _customRules = [];
+  List<EndpointRule> _senders = [];
+  List<EndpointRule> _receivers = [];
   BaselineProfile _baselineProfile = const BaselineProfile(
     id: 'default',
     name: 'Default Baseline Profile',
@@ -45,9 +50,44 @@ class PacketRepository {
   Uint8List? _inMemoryBuffer;
 
   List<CustomProtocolRule> get customRules => List.unmodifiable(_customRules);
+  List<EndpointRule> get senders => List.unmodifiable(_senders);
+  List<EndpointRule> get receivers => List.unmodifiable(_receivers);
   BaselineProfile get baselineProfile => _baselineProfile;
   PacketDatabaseService get dbService => _dbService;
   String? get loadedFilePath => _loadedFilePath;
+
+  void addSender(EndpointRule sender) {
+    _senders = [..._senders.where((s) => s.id != sender.id), sender];
+    _storageService.saveSenders(_senders);
+  }
+
+  void deleteSender(String id) {
+    _senders = _senders.where((s) => s.id != id).toList();
+    _storageService.saveSenders(_senders);
+  }
+
+  void addReceiver(EndpointRule receiver) {
+    _receivers = [..._receivers.where((r) => r.id != receiver.id), receiver];
+    _storageService.saveReceivers(_receivers);
+  }
+
+  void deleteReceiver(String id) {
+    _receivers = _receivers.where((r) => r.id != id).toList();
+    _storageService.saveReceivers(_receivers);
+  }
+
+  Map<String, int> getTopSenders({int limit = 15}) =>
+      _dbService.queryTopSenders(limit: limit);
+
+  Map<String, int> getTopReceivers({int limit = 15}) =>
+      _dbService.queryTopReceivers(limit: limit);
+
+  int countPacketsForEndpoint({
+    required String ip,
+    int? port,
+    required bool isSender,
+  }) =>
+      _dbService.countPacketsForEndpoint(ip: ip, port: port, isSender: isSender);
 
   /// Loads a demo PCAP entirely in memory for instant inspection and tests.
   void loadDemoCapture() {
@@ -177,12 +217,31 @@ class PacketRepository {
       rule,
     ];
     _storageService.saveCustomProtocols(_customRules);
-    return _dbService.relabelCustomProtocol(rule);
+    return _dbService.relabelAllCustomProtocols(_customRules);
+  }
+
+  /// Deletes a custom protocol rule and retroactively re-evaluates remaining rules.
+  int deleteCustomProtocol(String ruleId) {
+    _customRules = _customRules.where((r) => r.id != ruleId).toList();
+    _storageService.saveCustomProtocols(_customRules);
+    return _dbService.relabelAllCustomProtocols(_customRules);
+  }
+
+  /// Bulk updates all custom protocol rules.
+  int updateCustomProtocols(List<CustomProtocolRule> rules) {
+    _customRules = List.from(rules);
+    _storageService.saveCustomProtocols(_customRules);
+    return _dbService.relabelAllCustomProtocols(_customRules);
   }
 
   void updateBaselineProfile(BaselineProfile profile) {
     _baselineProfile = profile;
     _storageService.saveBaselineProfile(profile);
+    _dbService.reclassifyWithBaseline(profile, _customRules);
+  }
+
+  void setPacketTriage(int packetNo, TriageStatus status) {
+    _dbService.updatePacketTriage(packetNo, status);
   }
 
   List<PacketRecord> queryPackets({
@@ -196,9 +255,13 @@ class PacketRepository {
     },
     bool silenceLanChatter = true,
     Set<String> protocolPills = const {},
+    Set<String> senderFilters = const {},
+    Set<String> receiverFilters = const {},
     Set<String> ipFilters = const {},
     int? timeStartUs,
     int? timeEndUs,
+    String sortColumn = 'packet_no',
+    bool sortAscending = true,
   }) {
     return _dbService.queryPackets(
       offset: offset,
@@ -207,9 +270,13 @@ class PacketRepository {
       triageStatuses: triageStatuses,
       silenceLanChatter: silenceLanChatter,
       protocolPills: protocolPills,
+      senderFilters: senderFilters,
+      receiverFilters: receiverFilters,
       ipFilters: ipFilters,
       timeStartUs: timeStartUs,
       timeEndUs: timeEndUs,
+      sortColumn: sortColumn,
+      sortAscending: sortAscending,
     );
   }
 
@@ -222,6 +289,8 @@ class PacketRepository {
     },
     bool silenceLanChatter = true,
     Set<String> protocolPills = const {},
+    Set<String> senderFilters = const {},
+    Set<String> receiverFilters = const {},
     Set<String> ipFilters = const {},
     int? timeStartUs,
     int? timeEndUs,
@@ -231,6 +300,8 @@ class PacketRepository {
       triageStatuses: triageStatuses,
       silenceLanChatter: silenceLanChatter,
       protocolPills: protocolPills,
+      senderFilters: senderFilters,
+      receiverFilters: receiverFilters,
       ipFilters: ipFilters,
       timeStartUs: timeStartUs,
       timeEndUs: timeEndUs,

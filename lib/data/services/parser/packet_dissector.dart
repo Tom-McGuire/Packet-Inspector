@@ -342,10 +342,13 @@ class PacketDissector {
     final preview = _extractPreview(bytes, payloadOffset, payloadLength);
     final flowHash = computeFlowHash(srcIp, dstIp, srcPort ?? 0, dstPort ?? 0, ipProto);
 
-    // Evaluate Custom Protocol Rules
+    // Evaluate Custom Protocol Rules (sorted by specificity so Tier 2 magic bytes rules take precedence over generic Tier 1 catch-alls)
     String? matchedRuleId;
     Map<String, dynamic> customFields = const {};
-    for (final rule in customRules) {
+    final sortedRules = List<CustomProtocolRule>.from(customRules)
+      ..sort((a, b) => b.specificityScore.compareTo(a.specificityScore));
+
+    for (final rule in sortedRules) {
       if (rule.matches(
         ipProto: ipProto,
         srcPort: srcPort,
@@ -487,7 +490,7 @@ class PacketDissector {
   static List<int> _extractPreview(Uint8List bytes, int offset, int length) {
     if (offset >= bytes.length || length <= 0) return const [];
     final actualLen = (offset + length <= bytes.length) ? length : (bytes.length - offset);
-    final count = actualLen > 64 ? 64 : actualLen;
+    final count = actualLen > 2048 ? 2048 : actualLen;
     return bytes.sublist(offset, offset + count).toList();
   }
 

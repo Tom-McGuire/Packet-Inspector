@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../../../../domain/models/packet_record.dart';
 import '../../../../domain/models/custom_protocol_rule.dart';
+import '../../../../domain/models/endpoint_rule.dart';
 import '../../../../domain/models/baseline_profile.dart';
 import '../../../../domain/models/timeline_bucket.dart';
 import '../../../../data/repositories/packet_repository.dart';
@@ -25,6 +26,8 @@ class InspectorViewModel extends ChangeNotifier {
     TriageStatus.unexpected,
   };
   final Set<String> _selectedProtocolPills = {};
+  final Set<String> _selectedSenderKeys = {};
+  final Set<String> _selectedReceiverKeys = {};
   final Set<String> _selectedIps = {};
   int? _timeWindowStartUs;
   int? _timeWindowEndUs;
@@ -36,16 +39,28 @@ class InspectorViewModel extends ChangeNotifier {
 
   List<TimelineBucket> _timelineBuckets = [];
   Map<String, int> _protocolCounts = {};
+  Map<String, int> _senderCounts = {};
+  Map<String, int> _receiverCounts = {};
   Map<TriageStatus, int> _triageCounts = {};
   int _totalPacketCount = 0;
   bool _isAiPanelOpen = false;
   bool _isLoading = false;
+
+  String _sortColumn = 'packet_no';
+  bool _sortAscending = true;
+
+  static const int defaultPageSize = 1000;
+  int _pageSize = defaultPageSize;
+  bool _isLoadingMore = false;
+  bool _hasMorePackets = false;
 
   // Getters
   bool get isTriageMode => _isTriageMode;
   bool get silenceLanChatter => _silenceLanChatter;
   Set<TriageStatus> get selectedTriageStatuses => _selectedTriageStatuses;
   Set<String> get selectedProtocolPills => _selectedProtocolPills;
+  Set<String> get selectedSenderKeys => _selectedSenderKeys;
+  Set<String> get selectedReceiverKeys => _selectedReceiverKeys;
   Set<String> get selectedIps => _selectedIps;
   int? get timeWindowStartUs => _timeWindowStartUs;
   int? get timeWindowEndUs => _timeWindowEndUs;
@@ -55,13 +70,71 @@ class InspectorViewModel extends ChangeNotifier {
   Uint8List? get selectedPacketPayloadBytes => _selectedPacketPayloadBytes;
   List<TimelineBucket> get timelineBuckets => _timelineBuckets;
   Map<String, int> get protocolCounts => _protocolCounts;
+  Map<String, int> get senderCounts => _senderCounts;
+  Map<String, int> get receiverCounts => _receiverCounts;
   Map<TriageStatus, int> get triageCounts => _triageCounts;
   int get totalPacketCount => _totalPacketCount;
   bool get isAiPanelOpen => _isAiPanelOpen;
   bool get isLoading => _isLoading;
   String? get loadedFileName => _repository.loadedFilePath;
   List<CustomProtocolRule> get customRules => _repository.customRules;
+  List<EndpointRule> get senders => _repository.senders;
+  List<EndpointRule> get receivers => _repository.receivers;
   BaselineProfile get baselineProfile => _repository.baselineProfile;
+  String get sortColumn => _sortColumn;
+  bool get sortAscending => _sortAscending;
+  int get pageSize => _pageSize;
+  bool get isLoadingMore => _isLoadingMore;
+  bool get hasMorePackets => _hasMorePackets;
+
+  void setPageSize(int size) {
+    if (size > 0 && _pageSize != size) {
+      _pageSize = size;
+      _refreshPackets();
+      notifyListeners();
+    }
+  }
+
+  void loadMorePackets() {
+    if (_isLoadingMore || !_hasMorePackets) return;
+
+    _isLoadingMore = true;
+    notifyListeners();
+
+    final nextBatch = _repository.queryPackets(
+      offset: _packets.length,
+      limit: _pageSize,
+      isTriageMode: _isTriageMode,
+      triageStatuses: _selectedTriageStatuses,
+      silenceLanChatter: _silenceLanChatter,
+      protocolPills: _selectedProtocolPills,
+      senderFilters: _selectedSenderKeys,
+      receiverFilters: _selectedReceiverKeys,
+      ipFilters: _selectedIps,
+      timeStartUs: _timeWindowStartUs,
+      timeEndUs: _timeWindowEndUs,
+      sortColumn: _sortColumn,
+      sortAscending: _sortAscending,
+    );
+
+    if (nextBatch.isNotEmpty) {
+      _packets.addAll(nextBatch);
+    }
+    _hasMorePackets = _packets.length < _totalPacketCount;
+    _isLoadingMore = false;
+    notifyListeners();
+  }
+
+  void sortBy(String column) {
+    if (_sortColumn == column) {
+      _sortAscending = !_sortAscending;
+    } else {
+      _sortColumn = column;
+      _sortAscending = true;
+    }
+    _refreshPackets();
+    notifyListeners();
+  }
 
   void loadDemoCapture() {
     _isLoading = true;
@@ -162,6 +235,73 @@ class InspectorViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  void toggleSenderPill(String key) {
+    if (_selectedSenderKeys.contains(key)) {
+      _selectedSenderKeys.remove(key);
+    } else {
+      _selectedSenderKeys.add(key);
+    }
+    _refreshPackets();
+    notifyListeners();
+  }
+
+  void clearSenderPills() {
+    _selectedSenderKeys.clear();
+    _refreshPackets();
+    notifyListeners();
+  }
+
+  void toggleReceiverPill(String key) {
+    if (_selectedReceiverKeys.contains(key)) {
+      _selectedReceiverKeys.remove(key);
+    } else {
+      _selectedReceiverKeys.add(key);
+    }
+    _refreshPackets();
+    notifyListeners();
+  }
+
+  void clearReceiverPills() {
+    _selectedReceiverKeys.clear();
+    _refreshPackets();
+    notifyListeners();
+  }
+
+  void clearAllQuickFilters() {
+    _selectedProtocolPills.clear();
+    _selectedSenderKeys.clear();
+    _selectedReceiverKeys.clear();
+    _selectedIps.clear();
+    _refreshPackets();
+    notifyListeners();
+  }
+
+  void addSender(EndpointRule rule) {
+    _repository.addSender(rule);
+    _selectedSenderKeys.add(rule.filterKey);
+    _refreshState();
+    notifyListeners();
+  }
+
+  void deleteSender(String id) {
+    _repository.deleteSender(id);
+    _refreshState();
+    notifyListeners();
+  }
+
+  void addReceiver(EndpointRule rule) {
+    _repository.addReceiver(rule);
+    _selectedReceiverKeys.add(rule.filterKey);
+    _refreshState();
+    notifyListeners();
+  }
+
+  void deleteReceiver(String id) {
+    _repository.deleteReceiver(id);
+    _refreshState();
+    notifyListeners();
+  }
+
   void toggleIpFilter(String ip) {
     if (_selectedIps.contains(ip)) {
       _selectedIps.remove(ip);
@@ -207,6 +347,29 @@ class InspectorViewModel extends ChangeNotifier {
 
   void addCustomProtocol(CustomProtocolRule rule) {
     _repository.addCustomProtocol(rule);
+    _selectedProtocolPills.add(rule.name);
+    _refreshState();
+    notifyListeners();
+  }
+
+  void deleteCustomProtocol(String ruleId) {
+    _repository.deleteCustomProtocol(ruleId);
+    _refreshState();
+    notifyListeners();
+  }
+
+  void updateCustomProtocols(List<CustomProtocolRule> rules) {
+    _repository.updateCustomProtocols(rules);
+    _refreshState();
+    notifyListeners();
+  }
+
+  void updateCustomProtocol(CustomProtocolRule updatedRule) {
+    final rules = _repository.customRules.map((r) => r.id == updatedRule.id ? updatedRule : r).toList();
+    if (!rules.any((r) => r.id == updatedRule.id)) {
+      rules.add(updatedRule);
+    }
+    _repository.updateCustomProtocols(rules);
     _refreshState();
     notifyListeners();
   }
@@ -227,6 +390,22 @@ class InspectorViewModel extends ChangeNotifier {
       expectedIps: {..._repository.baselineProfile.expectedIps}..remove(ip),
     );
     _repository.updateBaselineProfile(updated);
+    _refreshState();
+    notifyListeners();
+  }
+
+  void resetIpTriage(String ip) {
+    final updated = _repository.baselineProfile.copyWith(
+      expectedIps: {..._repository.baselineProfile.expectedIps}..remove(ip),
+      unexpectedIps: {..._repository.baselineProfile.unexpectedIps}..remove(ip),
+    );
+    _repository.updateBaselineProfile(updated);
+    _refreshState();
+    notifyListeners();
+  }
+
+  void setPacketTriage(int packetNo, TriageStatus status) {
+    _repository.setPacketTriage(packetNo, status);
     _refreshState();
     notifyListeners();
   }
@@ -252,8 +431,16 @@ class InspectorViewModel extends ChangeNotifier {
     return CsvExportService.exportFlowsToCsv(flows);
   }
 
+  void resetFilters() {
+    _resetFilters();
+    _refreshPackets();
+    notifyListeners();
+  }
+
   void _resetFilters() {
     _selectedProtocolPills.clear();
+    _selectedSenderKeys.clear();
+    _selectedReceiverKeys.clear();
     _selectedIps.clear();
     _timeWindowStartUs = null;
     _timeWindowEndUs = null;
@@ -263,7 +450,31 @@ class InspectorViewModel extends ChangeNotifier {
   }
 
   void _refreshState() {
-    _protocolCounts = _repository.getProtocolCounts();
+    final dbCounts = _repository.getProtocolCounts();
+    final counts = Map<String, int>.from(dbCounts);
+    for (final rule in customRules) {
+      counts.putIfAbsent(rule.name, () => 0);
+    }
+    _protocolCounts = counts;
+
+    // Sender counts
+    final topSenders = _repository.getTopSenders();
+    final sCounts = Map<String, int>.from(topSenders);
+    for (final s in senders) {
+      final cnt = _repository.countPacketsForEndpoint(ip: s.ipAddress, port: s.port, isSender: true);
+      sCounts[s.filterKey] = cnt;
+    }
+    _senderCounts = sCounts;
+
+    // Receiver counts
+    final topReceivers = _repository.getTopReceivers();
+    final rCounts = Map<String, int>.from(topReceivers);
+    for (final r in receivers) {
+      final cnt = _repository.countPacketsForEndpoint(ip: r.ipAddress, port: r.port, isSender: false);
+      rCounts[r.filterKey] = cnt;
+    }
+    _receiverCounts = rCounts;
+
     _triageCounts = _repository.getTriageCounts(silenceLanChatter: _silenceLanChatter);
     _timelineBuckets = _repository.getTimelineBuckets();
     _refreshPackets();
@@ -275,6 +486,8 @@ class InspectorViewModel extends ChangeNotifier {
       triageStatuses: _selectedTriageStatuses,
       silenceLanChatter: _silenceLanChatter,
       protocolPills: _selectedProtocolPills,
+      senderFilters: _selectedSenderKeys,
+      receiverFilters: _selectedReceiverKeys,
       ipFilters: _selectedIps,
       timeStartUs: _timeWindowStartUs,
       timeEndUs: _timeWindowEndUs,
@@ -282,15 +495,21 @@ class InspectorViewModel extends ChangeNotifier {
 
     _packets = _repository.queryPackets(
       offset: 0,
-      limit: 250, // virtualized initial window
+      limit: _pageSize,
       isTriageMode: _isTriageMode,
       triageStatuses: _selectedTriageStatuses,
       silenceLanChatter: _silenceLanChatter,
       protocolPills: _selectedProtocolPills,
+      senderFilters: _selectedSenderKeys,
+      receiverFilters: _selectedReceiverKeys,
       ipFilters: _selectedIps,
       timeStartUs: _timeWindowStartUs,
       timeEndUs: _timeWindowEndUs,
+      sortColumn: _sortColumn,
+      sortAscending: _sortAscending,
     );
+
+    _hasMorePackets = _packets.length < _totalPacketCount;
 
     if (_selectedPacket != null && !_packets.any((p) => p.packetNo == _selectedPacket!.packetNo)) {
       _selectedPacket = null;

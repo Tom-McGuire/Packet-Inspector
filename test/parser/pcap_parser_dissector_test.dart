@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:packet_inspector/domain/models/packet_record.dart';
 import 'package:packet_inspector/domain/models/custom_protocol_rule.dart';
@@ -165,6 +166,90 @@ void main() {
       expect(info.customFields['Tag'], equals('PROD'));
       expect(info.summary, contains('CommandID=101'));
       expect(info.summary, contains('DeviceSerial=883719'));
+    });
+
+    test('Custom rules prioritize magic bytes over generic port catch-all (specificity ordering)', () {
+      // Build UDP packet on port 57313 with offset 153 = 0xDD
+      final payload = List<int>.filled(200, 0);
+      payload[153] = 0xDD; // sACN Per Address Priority magic byte
+
+      // Raw UDP frame: Ethernet (14) + IPv4 (20) + UDP (8) + payload
+      final frame = <int>[
+        // Ethernet header (14 bytes)
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+        0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB,
+        0x08, 0x00, // IPv4
+        // IPv4 header (20 bytes)
+        0x45, 0x00, 0x00, 0x00,
+        0x00, 0x01, 0x00, 0x00,
+        0x40, 0x11, 0x00, 0x00, // ttl, UDP (17), checksum
+        192, 168, 1, 10,
+        192, 168, 1, 20,
+        // UDP header (8 bytes)
+        0xDF, 0xE1, // src port: 57313
+        0xDF, 0xE1, // dst port: 57313
+        0x00, (8 + payload.length),
+        0x00, 0x00,
+        ...payload,
+      ];
+
+      final rawPacketPriority = RawCapturedPacket(
+        packetNo: 1,
+        timestampUs: 1000000,
+        capturedLength: frame.length,
+        originalLength: frame.length,
+        linkType: 1,
+        fileByteOffset: 0,
+        data: Uint8List.fromList(frame),
+      );
+
+      final genericRule = const CustomProtocolRule(
+        id: 'sacn_generic',
+        name: 'sACN',
+        colorHex: 0xFF2196F3,
+        defaultTriageStatus: TriageStatus.expected,
+        ipProtocol: 17,
+        port: 57313,
+      );
+
+      final specificRule = const CustomProtocolRule(
+        id: 'sacn_priority',
+        name: 'sACN Per Address Priority',
+        colorHex: 0xFF9C27B0,
+        defaultTriageStatus: TriageStatus.expected,
+        ipProtocol: 17,
+        port: 57313,
+        magicBytesOffset: 153,
+        magicBytesHex: [0xDD],
+      );
+
+      // Even if genericRule is listed FIRST in customRules, specificRule should win!
+      final dissectedWithSpecific = PacketDissector.dissect(
+        rawPacket: rawPacketPriority,
+        customRules: [genericRule, specificRule],
+      );
+      expect(dissectedWithSpecific.detectedProtocol, equals('sACN Per Address Priority'));
+      expect(dissectedWithSpecific.customProtocolId, equals('sacn_priority'));
+
+      // If payload does not have 0xDD at 153, it should fall back to generic sACN
+      final frameGeneric = List<int>.from(frame);
+      frameGeneric[14 + 20 + 8 + 153] = 0x00; // change offset 153
+      final rawPacketGeneric = RawCapturedPacket(
+        packetNo: 2,
+        timestampUs: 1001000,
+        capturedLength: frameGeneric.length,
+        originalLength: frameGeneric.length,
+        linkType: 1,
+        fileByteOffset: 0,
+        data: Uint8List.fromList(frameGeneric),
+      );
+
+      final dissectedGeneric = PacketDissector.dissect(
+        rawPacket: rawPacketGeneric,
+        customRules: [genericRule, specificRule],
+      );
+      expect(dissectedGeneric.detectedProtocol, equals('sACN'));
+      expect(dissectedGeneric.customProtocolId, equals('sacn_generic'));
     });
   });
 }

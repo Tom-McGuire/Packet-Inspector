@@ -286,11 +286,20 @@ class _HexByteInspectorState extends State<HexByteInspector> {
     final selectedSlice = bytes.sublist(start, end + 1);
     final hexString = selectedSlice.map((b) => b.toRadixString(16).padLeft(2, '0')).join(' ');
 
+    final packet = vm.selectedPacket;
+    int magicOffset = start;
+    if (!_showPayloadOnly && packet != null && packet.payloadFileOffset > 0) {
+      final payloadOffsetInPacket = packet.payloadFileOffset - packet.fileByteOffset;
+      if (start >= payloadOffsetInPacket) {
+        magicOffset = start - payloadOffsetInPacket;
+      }
+    }
+
     final rule = await showDialog<CustomProtocolRule>(
       context: context,
       builder: (ctx) => AddProtocolDialog(
-        prefillPacket: vm.selectedPacket,
-        prefillMagicOffset: start,
+        prefillPacket: packet,
+        prefillMagicOffset: magicOffset,
         prefillMagicHex: hexString,
       ),
     );

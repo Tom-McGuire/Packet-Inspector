@@ -13,5 +13,14 @@ void main() {
 
     expect(find.text('Packet Inspector'), findsOneWidget);
     expect(find.text('Baseline Triage'), findsOneWidget);
+    expect(find.text('No Capture File Loaded'), findsOneWidget);
+
+    // Click 'Load Demo Capture' from the empty state
+    await tester.tap(find.text('Load Demo Capture').first);
+    await tester.pumpAndSettle();
+
+    // Verify demo capture is loaded and table shows packets
+    expect(find.text('demo_capture.pcap'), findsOneWidget);
+    expect(find.textContaining('DNS Standard query'), findsWidgets);
   });
 }

@@ -156,6 +156,31 @@ class CustomProtocolRule {
   final List<int>? magicBytesHex;
   final List<ProtocolFieldSlice> fieldSlices;
 
+  /// Specificity score determines evaluation order:
+  /// More specific rules (Tier 2 magic bytes, IP filters) MUST be tested before generic (Tier 1 port-only) rules!
+  int get specificityScore {
+    int score = 0;
+    if (magicBytesHex != null && magicBytesHex!.isNotEmpty) {
+      score += 1000 + (magicBytesHex!.length * 10);
+    }
+    if (ipAddressFilter != null && ipAddressFilter!.isNotEmpty) {
+      score += 100;
+    }
+    if (port != null) {
+      score += 50;
+      if (portDirection != PortMatchDirection.either) {
+        score += 10;
+      }
+    }
+    if (ipProtocol != null) {
+      score += 20;
+    }
+    if (fieldSlices.isNotEmpty) {
+      score += fieldSlices.length * 5;
+    }
+    return score;
+  }
+
   bool matches({
     required int? ipProto,
     required int? srcPort,
@@ -197,16 +222,41 @@ class CustomProtocolRule {
     // 4. Magic bytes check
     if (magicBytesHex != null && magicBytesHex!.isNotEmpty) {
       final offset = magicBytesOffset ?? 0;
-      if (payload.length < offset + magicBytesHex!.length) {
-        return false;
-      }
-      for (int i = 0; i < magicBytesHex!.length; i++) {
-        if (payload[offset + i] != magicBytesHex![i]) {
-          return false;
+      bool matched = _matchesMagicBytes(payload, offset, magicBytesHex!);
+
+      // Also check if offset was provided relative to IP datagram (e.g. 20 IPv4 + 8 UDP = 28)
+      // or Ethernet frame (e.g. 14 Ethernet + 20 IPv4 + 8 UDP = 42)
+      if (!matched && ipProtocol == 17) {
+        if (offset >= 28) {
+          matched = _matchesMagicBytes(payload, offset - 28, magicBytesHex!);
+        }
+        if (!matched && offset >= 42) {
+          matched = _matchesMagicBytes(payload, offset - 42, magicBytesHex!);
+        }
+      } else if (!matched && ipProtocol == 6) {
+        if (offset >= 40) {
+          matched = _matchesMagicBytes(payload, offset - 40, magicBytesHex!);
+        }
+        if (!matched && offset >= 54) {
+          matched = _matchesMagicBytes(payload, offset - 54, magicBytesHex!);
         }
       }
+
+      if (!matched) return false;
     }
 
+    return true;
+  }
+
+  static bool _matchesMagicBytes(List<int> payload, int offset, List<int> expected) {
+    if (offset < 0 || payload.length < offset + expected.length) {
+      return false;
+    }
+    for (int i = 0; i < expected.length; i++) {
+      if (payload[offset + i] != expected[i]) {
+        return false;
+      }
+    }
     return true;
   }
 

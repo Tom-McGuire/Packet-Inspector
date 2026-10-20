@@ -5,6 +5,10 @@
 *.swp
 *.db
 *.sqlite
+baseline_profiles.json
+custom_protocols.json
+sender_library.json
+receiver_library.json
 .DS_Store
 .atom/
 .build/

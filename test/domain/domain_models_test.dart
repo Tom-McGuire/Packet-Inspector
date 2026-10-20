@@ -34,6 +34,8 @@ void main() {
       expect(packet.timestampSeconds, closeTo(1.5, 0.0001));
       expect(packet.globalDeltaMs, closeTo(1.2, 0.0001));
       expect(packet.streamDeltaMs, closeTo(3.4, 0.0001));
+      expect(packet.formattedDateTime, isNotEmpty);
+      expect(packet.dateTime.millisecondsSinceEpoch, equals(1500));
 
       final map = packet.toMap();
       final reconstructed = PacketRecord.fromMap(map);

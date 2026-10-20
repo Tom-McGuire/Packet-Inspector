@@ -1,12 +1,74 @@
+import 'dart:io';
+import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../../../domain/models/packet_record.dart';
 import '../../../../domain/models/custom_protocol_rule.dart';
+import '../../../../domain/models/endpoint_rule.dart';
 import '../view_models/inspector_view_model.dart';
 import '../../protocol_library/views/add_protocol_dialog.dart';
+import '../../protocol_library/views/add_endpoint_dialog.dart';
 
-class PacketTableView extends StatelessWidget {
+enum PacketTableColumn {
+  no('No.', 'packet_no', 65.0, 45.0),
+  time('Date & Time', 'timestamp_us', 180.0, 110.0),
+  globalDelta('Global Δt', 'global_delta_us', 95.0, 60.0),
+  streamDelta('Stream Δt', 'stream_delta_us', 95.0, 60.0),
+  source('Source', 'src_ip', 150.0, 80.0),
+  destination('Destination', 'dst_ip', 150.0, 80.0),
+  protocol('Protocol', 'detected_protocol', 100.0, 60.0),
+  length('Len', 'captured_length', 65.0, 45.0),
+  triage('Triage', 'triage_status', 130.0, 90.0),
+  summary('Summary', 'summary', 300.0, 100.0);
+
+  const PacketTableColumn(this.label, this.sortKey, this.defaultWidth, this.minWidth);
+  final String label;
+  final String sortKey;
+  final double defaultWidth;
+  final double minWidth;
+}
+
+class PacketTableView extends StatefulWidget {
   const PacketTableView({super.key});
+
+  @override
+  State<PacketTableView> createState() => _PacketTableViewState();
+}
+
+class _PacketTableViewState extends State<PacketTableView> {
+  final ScrollController _horizontalScrollController = ScrollController();
+  final ScrollController _verticalScrollController = ScrollController();
+  late Map<PacketTableColumn, double> _columnWidths;
+
+  @override
+  void initState() {
+    super.initState();
+    _columnWidths = {
+      for (final col in PacketTableColumn.values) col: col.defaultWidth,
+    };
+    _verticalScrollController.addListener(_onVerticalScroll);
+  }
+
+  void _onVerticalScroll() {
+    if (!_verticalScrollController.hasClients) return;
+    final maxScroll = _verticalScrollController.position.maxScrollExtent;
+    final currentScroll = _verticalScrollController.position.pixels;
+    if (maxScroll - currentScroll <= 400) {
+      final vm = context.read<InspectorViewModel>();
+      if (vm.hasMorePackets && !vm.isLoadingMore) {
+        vm.loadMorePackets();
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _verticalScrollController.removeListener(_onVerticalScroll);
+    _verticalScrollController.dispose();
+    _horizontalScrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -14,23 +76,73 @@ class PacketTableView extends StatelessWidget {
     final packets = vm.packets;
 
     if (packets.isEmpty) {
+      final hasCapture = vm.loadedFileName != null;
       return Container(
         color: Theme.of(context).colorScheme.surface,
         alignment: Alignment.center,
+        padding: const EdgeInsets.symmetric(horizontal: 24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.inbox_outlined, size: 48, color: Colors.grey),
-            const SizedBox(height: 12),
-            const Text(
-              'No packets match the current filter or capture',
-              style: TextStyle(color: Colors.grey, fontSize: 14),
+            Icon(
+              hasCapture ? Icons.filter_alt_off_outlined : Icons.radar,
+              size: 56,
+              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.7),
             ),
-            const SizedBox(height: 12),
-            FilledButton.tonal(
-              onPressed: () => vm.loadDemoCapture(),
-              child: const Text('Load Demo Capture'),
+            const SizedBox(height: 16),
+            Text(
+              hasCapture ? 'No Packets Match Filter' : 'No Capture File Loaded',
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
+            const SizedBox(height: 8),
+            Text(
+              hasCapture
+                  ? 'Try broadening your triage criteria or clearing protocol/IP filters.'
+                  : 'Open a .pcap or .pcapng network traffic file, or load the built-in demo capture.',
+              style: const TextStyle(color: Colors.grey, fontSize: 13),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 20),
+            if (hasCapture)
+              FilledButton.tonalIcon(
+                icon: const Icon(Icons.clear_all, size: 16),
+                label: const Text('Reset Filters'),
+                onPressed: () => vm.resetFilters(),
+              )
+            else
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  FilledButton.icon(
+                    icon: const Icon(Icons.folder_open, size: 16),
+                    label: const Text('Open PCAP File'),
+                    onPressed: () async {
+                      try {
+                        final files = await FilePicker.pickFiles(
+                          type: FileType.custom,
+                          allowedExtensions: ['pcap', 'pcapng', 'cap'],
+                        );
+                        if (files.isNotEmpty) {
+                          final path = files.first.path;
+                          final name = files.first.name;
+                          if (path != null) {
+                            vm.loadFile(File(path));
+                          } else {
+                            final bytes = await files.first.readAsBytes();
+                            vm.loadBytes(bytes, name);
+                          }
+                        }
+                      } catch (_) {}
+                    },
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    icon: const Icon(Icons.play_circle_outline, size: 16),
+                    label: const Text('Load Demo Capture'),
+                    onPressed: () => vm.loadDemoCapture(),
+                  ),
+                ],
+              ),
           ],
         ),
       );
@@ -38,120 +150,215 @@ class PacketTableView extends StatelessWidget {
 
     return Container(
       color: Theme.of(context).colorScheme.surface,
-      child: Column(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final availableWidth = constraints.maxWidth;
+          final sumExceptSummary = _columnWidths.entries
+              .where((e) => e.key != PacketTableColumn.summary)
+              .fold(0.0, (acc, e) => acc + e.value);
+          // 32px accounts for row padding (16 left + 16 right)
+          final baseSummaryWidth = _columnWidths[PacketTableColumn.summary]!;
+          final effectiveSummaryWidth = max(baseSummaryWidth, availableWidth - sumExceptSummary - 32.0);
+
+          final effectiveWidths = Map<PacketTableColumn, double>.from(_columnWidths);
+          effectiveWidths[PacketTableColumn.summary] = effectiveSummaryWidth;
+
+          final totalContentWidth = effectiveWidths.values.fold(0.0, (acc, w) => acc + w) + 32.0;
+          final totalTableWidth = max(availableWidth, totalContentWidth);
+
+          return Scrollbar(
+            controller: _horizontalScrollController,
+            thumbVisibility: true,
+            child: SingleChildScrollView(
+              controller: _horizontalScrollController,
+              scrollDirection: Axis.horizontal,
+              child: SizedBox(
+                width: totalTableWidth,
+                child: Column(
+                  children: [
+                    // Table Header
+                    _buildHeaderRow(context, vm, effectiveWidths),
+                    const Divider(height: 1),
+
+                    // Virtualized rows list with infinite scroll pagination
+                    Expanded(
+                      child: ListView.separated(
+                        controller: _verticalScrollController,
+                        itemCount: packets.length + (vm.hasMorePackets ? 1 : 0),
+                        separatorBuilder: (_, index) {
+                          if (index >= packets.length) return const SizedBox.shrink();
+                          return const Divider(height: 1, indent: 8, endIndent: 8);
+                        },
+                        itemBuilder: (context, index) {
+                          if (index == packets.length) {
+                            return Container(
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              alignment: Alignment.center,
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    'Loading more packets... (${packets.length} of ${vm.totalPacketCount} loaded)',
+                                    style: const TextStyle(fontSize: 12, color: Colors.grey),
+                                  ),
+                                ],
+                              ),
+                            );
+                          }
+                          final packet = packets[index];
+                          return _buildRow(context, vm, packet, effectiveWidths);
+                        },
+                      ),
+                    ),
+                    const Divider(height: 1),
+                    _buildStatusBar(context, vm, packets.length),
+                  ],
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildStatusBar(BuildContext context, InspectorViewModel vm, int loadedCount) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+      child: Row(
         children: [
-          // Table Header
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
-            child: const Row(
-              children: [
-                SizedBox(width: 50, child: Text('No.', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                SizedBox(width: 80, child: Text('Time (s)', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                SizedBox(width: 80, child: Text('Global Δt', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                SizedBox(width: 80, child: Text('Stream Δt', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                SizedBox(width: 140, child: Text('Source', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                SizedBox(width: 140, child: Text('Destination', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                SizedBox(width: 90, child: Text('Protocol', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                SizedBox(width: 60, child: Text('Len', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                SizedBox(width: 105, child: Text('Triage', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-                Expanded(child: Text('Summary', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12))),
-              ],
+          Icon(Icons.format_list_numbered, size: 14, color: Theme.of(context).colorScheme.primary),
+          const SizedBox(width: 6),
+          Text(
+            'Showing $loadedCount of ${vm.totalPacketCount} packets',
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
+          ),
+          if (vm.hasMorePackets) ...[
+            const SizedBox(width: 8),
+            const Text(
+              '• Scroll down to load next batch of 1,000',
+              style: TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+          ] else if (loadedCount > 0) ...[
+            const SizedBox(width: 8),
+            const Text(
+              '• All matching packets loaded',
+              style: TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.w500),
+            ),
+          ],
+          const Spacer(),
+          if (vm.isLoadingMore) ...[
+            const SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(strokeWidth: 1.5),
+            ),
+            const SizedBox(width: 6),
+            const Text(
+              'Loading next 1,000...',
+              style: TextStyle(fontSize: 11, color: Colors.grey),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeaderRow(
+    BuildContext context,
+    InspectorViewModel vm,
+    Map<PacketTableColumn, double> widths,
+  ) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.8),
+      child: Row(
+        children: PacketTableColumn.values.map((col) {
+          return _buildHeaderCell(context, vm, col, widths[col]!);
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildHeaderCell(
+    BuildContext context,
+    InspectorViewModel vm,
+    PacketTableColumn col,
+    double width,
+  ) {
+    final isSorted = vm.sortColumn == col.sortKey;
+    final isAsc = vm.sortAscending;
+
+    return SizedBox(
+      width: width,
+      child: Row(
+        children: [
+          Expanded(
+            child: InkWell(
+              onTap: () => vm.sortBy(col.sortKey),
+              borderRadius: BorderRadius.circular(4),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        col.label,
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          color: isSorted
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.onSurface,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (isSorted) ...[
+                      const SizedBox(width: 4),
+                      Icon(
+                        isAsc ? Icons.arrow_drop_up : Icons.arrow_drop_down,
+                        size: 18,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
           ),
-          const Divider(height: 1),
-
-          // Virtualized rows list
-          Expanded(
-            child: ListView.separated(
-              itemCount: packets.length,
-              separatorBuilder: (_, _) => const Divider(height: 1, indent: 8, endIndent: 8),
-              itemBuilder: (context, index) {
-                final packet = packets[index];
-                final isSelected = vm.selectedPacket?.packetNo == packet.packetNo;
-
-                return InkWell(
-                  onTap: () => vm.selectPacket(packet),
-                  onSecondaryTapUp: (details) => _showContextMenu(context, vm, packet, details.globalPosition),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                    color: isSelected
-                        ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.4)
-                        : (packet.triageStatus == TriageStatus.unexpected
-                            ? Colors.red.withValues(alpha: 0.05)
-                            : Colors.transparent),
-                    child: Row(
-                      children: [
-                        SizedBox(
-                          width: 50,
-                          child: Text(
-                            '${packet.packetNo}',
-                            style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                          ),
-                        ),
-                        SizedBox(
-                          width: 80,
-                          child: Text(
-                            packet.timestampSeconds.toStringAsFixed(4),
-                            style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
-                          ),
-                        ),
-                        SizedBox(
-                          width: 80,
-                          child: _buildDeltaBadge(
-                            context,
-                            packet.globalDeltaMs,
-                            isBurst: packet.globalDeltaMs < 0.05 && packet.globalDeltaMs > 0,
-                          ),
-                        ),
-                        SizedBox(
-                          width: 80,
-                          child: _buildDeltaBadge(
-                            context,
-                            packet.streamDeltaMs,
-                            isStall: packet.streamDeltaMs > 100.0,
-                          ),
-                        ),
-                        SizedBox(
-                          width: 140,
-                          child: Text(
-                            packet.srcPort != null ? '${packet.srcIp}:${packet.srcPort}' : packet.srcIp,
-                            style: const TextStyle(fontSize: 12),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        SizedBox(
-                          width: 140,
-                          child: Text(
-                            packet.dstPort != null ? '${packet.dstIp}:${packet.dstPort}' : packet.dstIp,
-                            style: const TextStyle(fontSize: 12),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        SizedBox(
-                          width: 90,
-                          child: _buildProtocolPill(context, packet.detectedProtocol),
-                        ),
-                        SizedBox(
-                          width: 60,
-                          child: Text('${packet.capturedLength}', style: const TextStyle(fontSize: 12)),
-                        ),
-                        SizedBox(
-                          width: 105,
-                          child: _buildTriageBadge(packet.triageStatus),
-                        ),
-                        Expanded(
-                          child: Text(
-                            packet.summary,
-                            style: const TextStyle(fontSize: 12),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
+          // Drag handle to resize column
+          MouseRegion(
+            cursor: SystemMouseCursors.resizeColumn,
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onHorizontalDragUpdate: (details) {
+                setState(() {
+                  final newWidth = max(
+                    col.minWidth,
+                    (_columnWidths[col] ?? col.defaultWidth) + details.delta.dx,
+                  );
+                  _columnWidths[col] = newWidth;
+                });
               },
+              child: Container(
+                width: 12,
+                height: 24,
+                alignment: Alignment.center,
+                child: Container(
+                  width: 1.5,
+                  height: 14,
+                  color: Theme.of(context).dividerColor.withValues(alpha: 0.6),
+                ),
+              ),
             ),
           ),
         ],
@@ -159,36 +366,104 @@ class PacketTableView extends StatelessWidget {
     );
   }
 
-  Widget _buildDeltaBadge(BuildContext context, double ms, {bool isBurst = false, bool isStall = false}) {
-    if (isBurst) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-        decoration: BoxDecoration(
-          color: Colors.redAccent.withValues(alpha: 0.2),
-          borderRadius: BorderRadius.circular(4),
+  Widget _buildRow(
+    BuildContext context,
+    InspectorViewModel vm,
+    PacketRecord packet,
+    Map<PacketTableColumn, double> widths,
+  ) {
+    final isSelected = vm.selectedPacket?.packetNo == packet.packetNo;
+
+    return InkWell(
+      onTap: () => vm.selectPacket(packet),
+      onSecondaryTapUp: (details) => _showContextMenu(context, vm, packet, details.globalPosition),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+        color: isSelected
+            ? Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.4)
+            : (packet.triageStatus == TriageStatus.unexpected
+                ? Colors.red.withValues(alpha: 0.05)
+                : Colors.transparent),
+        child: Row(
+          children: [
+            SizedBox(
+              width: widths[PacketTableColumn.no],
+              child: Text(
+                '${packet.packetNo}',
+                style: const TextStyle(fontSize: 12, fontFamily: 'monospace'),
+              ),
+            ),
+            SizedBox(
+              width: widths[PacketTableColumn.time],
+              child: Tooltip(
+                message: '${packet.timestampSeconds.toStringAsFixed(6)}s relative/raw\nEpoch: ${packet.timestampUs} µs',
+                child: Text(
+                  packet.formattedDateTime,
+                  style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            SizedBox(
+              width: widths[PacketTableColumn.globalDelta],
+              child: _buildDeltaBadge(
+                context,
+                packet.globalDeltaMs,
+              ),
+            ),
+            SizedBox(
+              width: widths[PacketTableColumn.streamDelta],
+              child: _buildDeltaBadge(
+                context,
+                packet.streamDeltaMs,
+              ),
+            ),
+            SizedBox(
+              width: widths[PacketTableColumn.source],
+              child: Text(
+                packet.srcPort != null ? '${packet.srcIp}:${packet.srcPort}' : packet.srcIp,
+                style: const TextStyle(fontSize: 12),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            SizedBox(
+              width: widths[PacketTableColumn.destination],
+              child: Text(
+                packet.dstPort != null ? '${packet.dstIp}:${packet.dstPort}' : packet.dstIp,
+                style: const TextStyle(fontSize: 12),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            SizedBox(
+              width: widths[PacketTableColumn.protocol],
+              child: _buildProtocolPill(context, packet.detectedProtocol),
+            ),
+            SizedBox(
+              width: widths[PacketTableColumn.length],
+              child: Text('${packet.capturedLength}', style: const TextStyle(fontSize: 12)),
+            ),
+            SizedBox(
+              width: widths[PacketTableColumn.triage],
+              child: _buildTriageBadge(context, vm, packet),
+            ),
+            SizedBox(
+              width: widths[PacketTableColumn.summary],
+              child: Text(
+                packet.summary,
+                style: const TextStyle(fontSize: 12),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
-        child: Text(
-          '${ms.toStringAsFixed(3)}ms',
-          style: const TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.bold),
-        ),
-      );
-    }
-    if (isStall) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-        decoration: BoxDecoration(
-          color: Colors.orange.withValues(alpha: 0.2),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          '${ms.toStringAsFixed(1)}ms',
-          style: const TextStyle(fontSize: 11, color: Colors.deepOrange, fontWeight: FontWeight.bold),
-        ),
-      );
-    }
+      ),
+    );
+  }
+
+  Widget _buildDeltaBadge(BuildContext context, double ms) {
     return Text(
-      '${ms.toStringAsFixed(2)}ms',
-      style: const TextStyle(fontSize: 11, color: Colors.grey),
+      '${ms.toStringAsFixed(3)}ms',
+      style: const TextStyle(fontSize: 11),
     );
   }
 
@@ -225,33 +500,95 @@ class PacketTableView extends StatelessWidget {
     );
   }
 
-  Widget _buildTriageBadge(TriageStatus status) {
+  Widget _buildTriageBadge(BuildContext context, InspectorViewModel vm, PacketRecord packet) {
+    final status = packet.triageStatus;
+    final Color color;
+    final String label;
+
     switch (status) {
       case TriageStatus.expected:
-        return const Row(
-          children: [
-            CircleAvatar(backgroundColor: Colors.green, radius: 4),
-            SizedBox(width: 4),
-            Text('Expected', style: TextStyle(fontSize: 11, color: Colors.green)),
-          ],
-        );
+        color = Colors.green;
+        label = 'Expected';
+        break;
       case TriageStatus.unclassified:
-        return const Row(
-          children: [
-            CircleAvatar(backgroundColor: Colors.amber, radius: 4),
-            SizedBox(width: 4),
-            Text('Unclassified', style: TextStyle(fontSize: 11, color: Colors.orange)),
-          ],
-        );
+        color = Colors.orange;
+        label = 'Unclassified';
+        break;
       case TriageStatus.unexpected:
-        return const Row(
-          children: [
-            CircleAvatar(backgroundColor: Colors.red, radius: 4),
-            SizedBox(width: 4),
-            Text('Unexpected', style: TextStyle(fontSize: 11, color: Colors.red, fontWeight: FontWeight.bold)),
-          ],
-        );
+        color = Colors.red;
+        label = 'Unexpected';
+        break;
     }
+
+    return InkWell(
+      onTapDown: (details) {
+        final position = details.globalPosition;
+        showMenu<TriageStatus>(
+          context: context,
+          position: RelativeRect.fromLTRB(position.dx, position.dy, position.dx, position.dy),
+          items: const [
+            PopupMenuItem(
+              value: TriageStatus.expected,
+              child: Row(
+                children: [
+                  CircleAvatar(backgroundColor: Colors.green, radius: 4),
+                  SizedBox(width: 8),
+                  Text('Mark Packet as Expected'),
+                ],
+              ),
+            ),
+            PopupMenuItem(
+              value: TriageStatus.unclassified,
+              child: Row(
+                children: [
+                  CircleAvatar(backgroundColor: Colors.orange, radius: 4),
+                  SizedBox(width: 8),
+                  Text('Reset Packet to Unclassified'),
+                ],
+              ),
+            ),
+            PopupMenuItem(
+              value: TriageStatus.unexpected,
+              child: Row(
+                children: [
+                  CircleAvatar(backgroundColor: Colors.red, radius: 4),
+                  SizedBox(width: 8),
+                  Text('Flag Packet as Unexpected'),
+                ],
+              ),
+            ),
+          ],
+        ).then((newStatus) {
+          if (newStatus != null) {
+            vm.setPacketTriage(packet.packetNo, newStatus);
+          }
+        });
+      },
+      borderRadius: BorderRadius.circular(4),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 2, horizontal: 2),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(backgroundColor: color, radius: 4),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                label,
+                style: TextStyle(
+                  fontSize: 11,
+                  color: color,
+                  fontWeight: status == TriageStatus.unexpected ? FontWeight.bold : FontWeight.normal,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 2),
+            Icon(Icons.arrow_drop_down, size: 14, color: color.withValues(alpha: 0.6)),
+          ],
+        ),
+      ),
+    );
   }
 
   void _showContextMenu(
@@ -286,18 +623,68 @@ class PacketTableView extends StatelessWidget {
             children: [
               Icon(Icons.library_add, size: 16),
               SizedBox(width: 8),
-              Text('Add to Protocol Library...'),
+              Expanded(child: Text('Add to Protocol Library...')),
             ],
           ),
         ),
+        PopupMenuItem(
+          onTap: () async {
+            WidgetsBinding.instance.addPostFrameCallback((_) async {
+              final rule = await showDialog<EndpointRule>(
+                context: context,
+                builder: (ctx) => AddEndpointDialog(
+                  type: EndpointType.sender,
+                  prefillIp: packet.srcIp,
+                  prefillPort: packet.srcPort,
+                ),
+              );
+              if (rule != null) {
+                vm.addSender(rule);
+              }
+            });
+          },
+          child: Row(
+            children: [
+              const Icon(Icons.arrow_upward, size: 16, color: Colors.blueAccent),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Save Source (${packet.srcIp}) to Sender Library...')),
+            ],
+          ),
+        ),
+        if (packet.dstIp.isNotEmpty)
+          PopupMenuItem(
+            onTap: () async {
+              WidgetsBinding.instance.addPostFrameCallback((_) async {
+                final rule = await showDialog<EndpointRule>(
+                  context: context,
+                  builder: (ctx) => AddEndpointDialog(
+                    type: EndpointType.receiver,
+                    prefillIp: packet.dstIp,
+                    prefillPort: packet.dstPort,
+                  ),
+                );
+                if (rule != null) {
+                  vm.addReceiver(rule);
+                }
+              });
+            },
+            child: Row(
+              children: [
+                const Icon(Icons.arrow_downward, size: 16, color: Colors.greenAccent),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Save Dest (${packet.dstIp}) to Receiver Library...')),
+              ],
+            ),
+          ),
         const PopupMenuDivider(),
+        // Source IP actions
         PopupMenuItem(
           onTap: () => vm.markIpExpected(packet.srcIp),
           child: Row(
             children: [
               const Icon(Icons.check_circle_outline, size: 16, color: Colors.green),
               const SizedBox(width: 8),
-              Text('Mark ${packet.srcIp} as Expected'),
+              Expanded(child: Text('Mark Source IP (${packet.srcIp}) as Expected')),
             ],
           ),
         ),
@@ -307,7 +694,83 @@ class PacketTableView extends StatelessWidget {
             children: [
               const Icon(Icons.warning_amber_rounded, size: 16, color: Colors.red),
               const SizedBox(width: 8),
-              Text('Flag ${packet.srcIp} as Unexpected'),
+              Expanded(child: Text('Flag Source IP (${packet.srcIp}) as Unexpected')),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          onTap: () => vm.resetIpTriage(packet.srcIp),
+          child: const Row(
+            children: [
+              Icon(Icons.refresh, size: 16, color: Colors.amber),
+              SizedBox(width: 8),
+              Expanded(child: Text('Reset Source IP to Unclassified')),
+            ],
+          ),
+        ),
+        // Destination IP actions (if different from source IP)
+        if (packet.dstIp.isNotEmpty && packet.dstIp != packet.srcIp) ...[
+          const PopupMenuDivider(),
+          PopupMenuItem(
+            onTap: () => vm.markIpExpected(packet.dstIp),
+            child: Row(
+              children: [
+                const Icon(Icons.check_circle_outline, size: 16, color: Colors.green),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Mark Dest IP (${packet.dstIp}) as Expected')),
+              ],
+            ),
+          ),
+          PopupMenuItem(
+            onTap: () => vm.markIpUnexpected(packet.dstIp),
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, size: 16, color: Colors.red),
+                const SizedBox(width: 8),
+                Expanded(child: Text('Flag Dest IP (${packet.dstIp}) as Unexpected')),
+              ],
+            ),
+          ),
+          PopupMenuItem(
+            onTap: () => vm.resetIpTriage(packet.dstIp),
+            child: const Row(
+              children: [
+                Icon(Icons.refresh, size: 16, color: Colors.amber),
+                SizedBox(width: 8),
+                Expanded(child: Text('Reset Dest IP to Unclassified')),
+              ],
+            ),
+          ),
+        ],
+        const PopupMenuDivider(),
+        // Individual packet actions
+        PopupMenuItem(
+          onTap: () => vm.setPacketTriage(packet.packetNo, TriageStatus.expected),
+          child: Row(
+            children: [
+              const Icon(Icons.bookmark_added_outlined, size: 16, color: Colors.green),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Set Packet #${packet.packetNo} as Expected')),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          onTap: () => vm.setPacketTriage(packet.packetNo, TriageStatus.unexpected),
+          child: Row(
+            children: [
+              const Icon(Icons.report_outlined, size: 16, color: Colors.red),
+              const SizedBox(width: 8),
+              Expanded(child: Text('Set Packet #${packet.packetNo} as Unexpected')),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          onTap: () => vm.setPacketTriage(packet.packetNo, TriageStatus.unclassified),
+          child: const Row(
+            children: [
+              Icon(Icons.help_outline, size: 16, color: Colors.amber),
+              SizedBox(width: 8),
+              Expanded(child: Text('Set Packet as Unclassified')),
             ],
           ),
         ),
@@ -322,7 +785,7 @@ class PacketTableView extends StatelessWidget {
             children: [
               Icon(Icons.filter_list, size: 16),
               SizedBox(width: 8),
-              Text('Filter by this 5-Tuple Flow'),
+              Expanded(child: Text('Filter by this 5-Tuple Flow')),
             ],
           ),
         ),

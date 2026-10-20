@@ -18,7 +18,7 @@ class PacketInspectorApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider(
-          create: (_) => InspectorViewModel(repository: PacketRepository())..loadDemoCapture(),
+          create: (_) => InspectorViewModel(repository: PacketRepository()),
         ),
       ],
       child: MaterialApp(

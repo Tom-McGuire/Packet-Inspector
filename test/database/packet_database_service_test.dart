@@ -282,6 +282,52 @@ void main() {
       final rawBytes = repo.readRawPacketBytes(firstPacket);
       expect(rawBytes.length, equals(firstPacket.capturedLength));
 
+      // Test column sorting in queryPackets
+      final sortedDesc = repo.queryPackets(
+        sortColumn: 'packet_no',
+        sortAscending: false,
+        silenceLanChatter: false,
+      );
+      expect(sortedDesc.first.packetNo, greaterThan(sortedDesc.last.packetNo));
+
+      final sortedByLenAsc = repo.queryPackets(
+        sortColumn: 'captured_length',
+        sortAscending: true,
+        silenceLanChatter: false,
+      );
+      expect(sortedByLenAsc.first.capturedLength, lessThanOrEqualTo(sortedByLenAsc.last.capturedLength));
+
+      // Test baseline triage reclassification
+      // Flag 10.99.88.77 as unexpected
+      final updatedProfile = repo.baselineProfile.copyWith(
+        unexpectedIps: {'10.99.88.77'},
+      );
+      repo.updateBaselineProfile(updatedProfile);
+
+      final unexpectedCounts = repo.getTriageCounts(silenceLanChatter: false);
+      expect(unexpectedCounts[TriageStatus.unexpected], greaterThanOrEqualTo(10));
+
+      final unexpectedPackets = repo.queryPackets(
+        isTriageMode: true,
+        triageStatuses: {TriageStatus.unexpected},
+        silenceLanChatter: false,
+      );
+      expect(unexpectedPackets.any((p) => p.srcIp == '10.99.88.77'), isTrue);
+      expect(unexpectedPackets.first.triageStatus, equals(TriageStatus.unexpected));
+
+      // Test direct packet triage assignment
+      final targetPacketNo = unexpectedPackets.first.packetNo;
+      repo.setPacketTriage(targetPacketNo, TriageStatus.expected);
+      final reloadedPacket = repo.queryPackets(silenceLanChatter: false).firstWhere((p) => p.packetNo == targetPacketNo);
+      expect(reloadedPacket.triageStatus, equals(TriageStatus.expected));
+
+      // Test batch pagination query
+      final page1 = repo.queryPackets(offset: 0, limit: 5, silenceLanChatter: false);
+      expect(page1.length, equals(5));
+      final page2 = repo.queryPackets(offset: 5, limit: 5, silenceLanChatter: false);
+      expect(page2.length, equals(5));
+      expect(page1.first.packetNo, isNot(equals(page2.first.packetNo)));
+
       repo.dispose();
     });
   });

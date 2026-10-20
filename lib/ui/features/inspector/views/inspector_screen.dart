@@ -7,6 +7,7 @@ import 'dual_mode_filter_bar.dart';
 import 'timeline_spike_scrubber.dart';
 import 'packet_table_view.dart';
 import 'hex_byte_inspector.dart';
+import '../../protocol_library/views/protocol_library_dialog.dart';
 
 class InspectorScreen extends StatelessWidget {
   const InspectorScreen({super.key, this.aiPanelSlot});
@@ -19,6 +20,7 @@ class InspectorScreen extends StatelessWidget {
 
     return Scaffold(
       appBar: AppBar(
+        centerTitle: false,
         titleSpacing: 16,
         title: Row(
           children: [
@@ -29,7 +31,8 @@ class InspectorScreen extends StatelessWidget {
               style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
             ),
             const SizedBox(width: 12),
-            if (vm.loadedFileName != null)
+            if (vm.loadedFileName != null) ...[
+              const SizedBox(width: 12),
               Flexible(
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -49,15 +52,11 @@ class InspectorScreen extends StatelessWidget {
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        '(${vm.totalPacketCount} pkts)',
-                        style: const TextStyle(fontSize: 11, color: Colors.grey),
-                      ),
                     ],
                   ),
                 ),
               ),
+            ],
           ],
         ),
         actions: [
@@ -74,6 +73,20 @@ class InspectorScreen extends StatelessWidget {
             icon: const Icon(Icons.play_circle_outline, size: 16),
             label: const Text('Load Demo'),
             onPressed: () => vm.loadDemoCapture(),
+          ),
+          const SizedBox(width: 8),
+
+          // Protocol Library Button
+          IconButton(
+            tooltip: 'Protocol Library (${vm.customRules.length})',
+            icon: Badge(
+              label: Text('${vm.customRules.length}'),
+              child: const Icon(Icons.tune, size: 20),
+            ),
+            onPressed: () => showDialog(
+              context: context,
+              builder: (ctx) => ProtocolLibraryDialog(viewModel: vm),
+            ),
           ),
           const SizedBox(width: 8),
 
@@ -150,21 +163,24 @@ class InspectorScreen extends StatelessWidget {
                 // Synchronized Delta-Time Spike Scrubber
                 const TimelineSpikeScrubber(),
 
-                // Split: Packet Table (flex 5) & Hex Inspector (flex 4)
+                // When capture loaded: Split between Packet Table & Hex Inspector.
+                // When empty: Full workspace for Packet Table empty state.
                 Expanded(
-                  child: Column(
-                    children: [
-                      const Expanded(
-                        flex: 6,
-                        child: PacketTableView(),
-                      ),
-                      const Divider(height: 1),
-                      const Expanded(
-                        flex: 4,
-                        child: HexByteInspector(),
-                      ),
-                    ],
-                  ),
+                  child: vm.loadedFileName != null
+                      ? const Column(
+                          children: [
+                            Expanded(
+                              flex: 6,
+                              child: PacketTableView(),
+                            ),
+                            Divider(height: 1),
+                            Expanded(
+                              flex: 4,
+                              child: HexByteInspector(),
+                            ),
+                          ],
+                        )
+                      : const PacketTableView(),
                 ),
               ],
             ),

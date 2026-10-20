@@ -25,11 +25,7 @@ class _TimelineSpikeScrubberState extends State<TimelineSpikeScrubber> {
     final isZoomed = vm.timeWindowStartUs != null || vm.timeWindowEndUs != null;
 
     if (buckets.isEmpty) {
-      return Container(
-        height: 100,
-        alignment: Alignment.center,
-        child: const Text('No timeline data available'),
-      );
+      return const SizedBox.shrink();
     }
 
     return Container(
