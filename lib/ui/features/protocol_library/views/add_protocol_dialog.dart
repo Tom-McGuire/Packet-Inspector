@@ -418,6 +418,7 @@ class _AddProtocolDialogState extends State<AddProtocolDialog> {
       magicBytesOffset: magicOffset,
       magicBytesHex: magicBytes,
       fieldSlices: _fieldSlices,
+      isVisible: widget.existingRule?.isVisible ?? true,
     );
 
     Navigator.of(context).pop(rule);

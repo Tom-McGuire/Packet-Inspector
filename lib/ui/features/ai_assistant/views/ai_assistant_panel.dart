@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../../domain/models/custom_protocol_rule.dart';
+import '../../../../domain/models/endpoint_rule.dart';
 import '../../../../domain/models/packet_record.dart';
 import '../../../features/inspector/view_models/inspector_view_model.dart';
 import '../../../../data/services/ai/packet_ai_tools.dart';
@@ -20,6 +21,10 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
   final ScrollController _scrollCtrl = ScrollController();
   bool _isSending = false;
 
+  String? _activeTriggerType; // 'p', 's', or 'r'
+  String _activeTriggerQuery = '';
+  int _triggerStartIndex = -1;
+
   @override
   void initState() {
     super.initState();
@@ -27,19 +32,88 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
     _llmService = LlmProviderService(
       tools: PacketAiTools(repository: vm.repository),
     );
-    // Add welcome message
+    _inputCtrl.addListener(_onInputChanged);
+
+    // Add welcome message with /p, /s, /r guidance
     _llmService.history.add(ChatMessage(
       role: 'assistant',
       text: '👋 Welcome to **Packet Inspector AI**!\n\n'
-          'I can summarize your capture, hunt for timing spikes, chart top talkers, or suggest signatures for custom binary protocols.',
+          'I can summarize your capture, hunt for timing spikes, chart top talkers, or generate specific reports on your custom library.\n\n'
+          '💡 **Filter Mentions**: Type `/p` for protocols, `/s` for senders, or `/r` for receivers (or use the chips below) to reference specific items!',
     ));
   }
 
   @override
   void dispose() {
+    _inputCtrl.removeListener(_onInputChanged);
     _inputCtrl.dispose();
     _scrollCtrl.dispose();
     super.dispose();
+  }
+
+  void _onInputChanged() {
+    final text = _inputCtrl.text;
+    final selection = _inputCtrl.selection;
+    if (!selection.isValid || selection.baseOffset < 0) {
+      if (_activeTriggerType != null) {
+        setState(() => _activeTriggerType = null);
+      }
+      return;
+    }
+
+    final cursor = selection.baseOffset;
+    final textBeforeCursor = text.substring(0, cursor);
+
+    // Look for /p, /s, or /r token right before cursor
+    final match = RegExp(r'(?:^|\s)(/[psr])([^\s]*)$', caseSensitive: false).firstMatch(textBeforeCursor);
+    if (match != null) {
+      final trigger = match.group(1)!.toLowerCase(); // '/p', '/s', '/r'
+      final rawQuery = match.group(2) ?? '';
+      final query = rawQuery.startsWith(':') ? rawQuery.substring(1) : rawQuery;
+      final triggerType = trigger.substring(1);
+      final rawStart = match.start;
+      final startIdx = textBeforeCursor[rawStart] == ' ' ? rawStart + 1 : rawStart;
+
+      setState(() {
+        _activeTriggerType = triggerType;
+        _activeTriggerQuery = query.replaceAll('"', '').toLowerCase();
+        _triggerStartIndex = startIdx;
+      });
+    } else {
+      if (_activeTriggerType != null) {
+        setState(() => _activeTriggerType = null);
+      }
+    }
+  }
+
+  void _insertReference(String tag, String value) {
+    final token = value.contains(' ') ? '/$tag:"$value" ' : '/$tag:$value ';
+    final text = _inputCtrl.text;
+
+    if (_triggerStartIndex >= 0 && _triggerStartIndex <= text.length) {
+      final cursor = _inputCtrl.selection.isValid ? _inputCtrl.selection.baseOffset : text.length;
+      final before = text.substring(0, _triggerStartIndex);
+      final after = cursor <= text.length ? text.substring(cursor) : '';
+      final newText = '$before$token$after';
+      _inputCtrl.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: before.length + token.length),
+      );
+    } else {
+      final cursor = _inputCtrl.selection.isValid ? _inputCtrl.selection.baseOffset : text.length;
+      final before = text.substring(0, cursor);
+      final after = text.substring(cursor);
+      final newText = '$before$token$after';
+      _inputCtrl.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: before.length + token.length),
+      );
+    }
+
+    setState(() {
+      _activeTriggerType = null;
+      _triggerStartIndex = -1;
+    });
   }
 
   void _sendMessage([String? textToSend]) async {
@@ -194,6 +268,13 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
               child: LinearProgressIndicator(minHeight: 2),
             ),
 
+          // Autocomplete suggestion overlay if user is typing /p, /s, or /r
+          if (_activeTriggerType != null)
+            _buildAutocompleteOverlay(context, vm),
+
+          // Filter reference shortcut helper chips (/p, /s, /r)
+          _buildReferenceHelperBar(context, vm),
+
           // Input field
           Container(
             padding: const EdgeInsets.all(8),
@@ -211,7 +292,7 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
                   child: TextField(
                     controller: _inputCtrl,
                     decoration: const InputDecoration(
-                      hintText: 'Ask AI or command a filter...',
+                      hintText: 'Ask AI or filter by /p, /s, /r...',
                       isDense: true,
                       border: OutlineInputBorder(),
                       contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -294,6 +375,8 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
         return _buildTimingSpikesCard(context, vm, result);
       case 'custom_protocol_suggestion':
         return _buildCustomProtocolSuggestionCard(context, vm, result);
+      case 'filtered_library_report':
+        return _buildFilteredReportCard(context, vm, result);
       default:
         return const SizedBox.shrink();
     }
@@ -594,6 +677,459 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
               Navigator.of(ctx).pop();
             },
             child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReferenceHelperBar(BuildContext context, InspectorViewModel vm) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            const Text('Filters: ', style: TextStyle(fontSize: 10, color: Colors.grey)),
+            ActionChip(
+              avatar: const Icon(Icons.tune, size: 11, color: Colors.indigoAccent),
+              label: const Text('/p Protocol', style: TextStyle(fontSize: 10)),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              onPressed: () {
+                setState(() {
+                  _activeTriggerType = 'p';
+                  _activeTriggerQuery = '';
+                  _triggerStartIndex = _inputCtrl.selection.isValid ? _inputCtrl.selection.baseOffset : _inputCtrl.text.length;
+                });
+              },
+            ),
+            const SizedBox(width: 4),
+            ActionChip(
+              avatar: const Icon(Icons.arrow_upward, size: 11, color: Colors.blueAccent),
+              label: const Text('/s Sender', style: TextStyle(fontSize: 10)),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              onPressed: () {
+                setState(() {
+                  _activeTriggerType = 's';
+                  _activeTriggerQuery = '';
+                  _triggerStartIndex = _inputCtrl.selection.isValid ? _inputCtrl.selection.baseOffset : _inputCtrl.text.length;
+                });
+              },
+            ),
+            const SizedBox(width: 4),
+            ActionChip(
+              avatar: const Icon(Icons.arrow_downward, size: 11, color: Colors.greenAccent),
+              label: const Text('/r Receiver', style: TextStyle(fontSize: 10)),
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              onPressed: () {
+                setState(() {
+                  _activeTriggerType = 'r';
+                  _activeTriggerQuery = '';
+                  _triggerStartIndex = _inputCtrl.selection.isValid ? _inputCtrl.selection.baseOffset : _inputCtrl.text.length;
+                });
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAutocompleteOverlay(BuildContext context, InspectorViewModel vm) {
+    final type = _activeTriggerType!;
+    final query = _activeTriggerQuery;
+
+    final String title;
+    final IconData icon;
+    final Color color;
+    final List<Widget> items = [];
+
+    if (type == 'p') {
+      title = 'Select Protocol (/p)';
+      icon = Icons.tune;
+      color = Colors.indigoAccent;
+
+      final matchingCustom = vm.customRules
+          .where((r) => r.name.toLowerCase().contains(query))
+          .toList();
+      for (final r in matchingCustom) {
+        items.add(Material(
+          type: MaterialType.transparency,
+          child: ListTile(
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            leading: CircleAvatar(radius: 6, backgroundColor: Color(r.colorHex)),
+            title: Text(r.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            subtitle: Text(
+              '${r.ipProtocol == 6 ? "TCP" : (r.ipProtocol == 17 ? "UDP" : "IP")} Port ${r.port ?? "*"}',
+              style: const TextStyle(fontSize: 10),
+            ),
+            onTap: () => _insertReference('p', r.name),
+          ),
+        ));
+      }
+
+      final standardProtos = vm.protocolCounts.keys
+          .where((name) => !vm.customRules.any((r) => r.name == name) && name.toLowerCase().contains(query))
+          .toList();
+      for (final name in standardProtos) {
+        final count = vm.protocolCounts[name] ?? 0;
+        items.add(Material(
+          type: MaterialType.transparency,
+          child: ListTile(
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            leading: const Icon(Icons.stream, size: 14, color: Colors.grey),
+            title: Text(name, style: const TextStyle(fontSize: 12)),
+            subtitle: Text('$count packets', style: const TextStyle(fontSize: 10)),
+            onTap: () => _insertReference('p', name),
+          ),
+        ));
+      }
+    } else if (type == 's') {
+      title = 'Select Sender (/s)';
+      icon = Icons.arrow_upward;
+      color = Colors.blueAccent;
+
+      final matchingSenders = vm.senders
+          .where((s) => s.name.toLowerCase().contains(query) || s.ipAddress.contains(query))
+          .toList();
+      for (final s in matchingSenders) {
+        items.add(Material(
+          type: MaterialType.transparency,
+          child: ListTile(
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            leading: CircleAvatar(radius: 6, backgroundColor: Color(s.colorHex)),
+            title: Text(s.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            subtitle: Text(s.port != null ? '${s.ipAddress}:${s.port}' : s.ipAddress, style: const TextStyle(fontSize: 10)),
+            onTap: () => _insertReference('s', s.filterKey),
+          ),
+        ));
+      }
+
+      final discoveredSenders = vm.senderCounts.keys
+          .where((ip) => !vm.senders.any((s) => s.ipAddress == ip || s.filterKey == ip) && ip.contains(query))
+          .take(10)
+          .toList();
+      for (final ip in discoveredSenders) {
+        final count = vm.senderCounts[ip] ?? 0;
+        items.add(Material(
+          type: MaterialType.transparency,
+          child: ListTile(
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            leading: const Icon(Icons.arrow_upward, size: 14, color: Colors.grey),
+            title: Text(ip, style: const TextStyle(fontSize: 12)),
+            subtitle: Text('$count pkts sent', style: const TextStyle(fontSize: 10)),
+            onTap: () => _insertReference('s', ip),
+          ),
+        ));
+      }
+    } else {
+      title = 'Select Receiver (/r)';
+      icon = Icons.arrow_downward;
+      color = Colors.greenAccent;
+
+      final matchingReceivers = vm.receivers
+          .where((r) => r.name.toLowerCase().contains(query) || r.ipAddress.contains(query))
+          .toList();
+      for (final r in matchingReceivers) {
+        items.add(Material(
+          type: MaterialType.transparency,
+          child: ListTile(
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            leading: CircleAvatar(radius: 6, backgroundColor: Color(r.colorHex)),
+            title: Text(r.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+            subtitle: Text(r.port != null ? '${r.ipAddress}:${r.port}' : r.ipAddress, style: const TextStyle(fontSize: 10)),
+            onTap: () => _insertReference('r', r.filterKey),
+          ),
+        ));
+      }
+
+      final discoveredReceivers = vm.receiverCounts.keys
+          .where((ip) => !vm.receivers.any((r) => r.ipAddress == ip || r.filterKey == ip) && ip.contains(query))
+          .take(10)
+          .toList();
+      for (final ip in discoveredReceivers) {
+        final count = vm.receiverCounts[ip] ?? 0;
+        items.add(Material(
+          type: MaterialType.transparency,
+          child: ListTile(
+            dense: true,
+            visualDensity: VisualDensity.compact,
+            leading: const Icon(Icons.arrow_downward, size: 14, color: Colors.grey),
+            title: Text(ip, style: const TextStyle(fontSize: 12)),
+            subtitle: Text('$count pkts received', style: const TextStyle(fontSize: 10)),
+            onTap: () => _insertReference('r', ip),
+          ),
+        ));
+      }
+    }
+
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 180),
+      margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: color.withValues(alpha: 0.6)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.2),
+            blurRadius: 6,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: color.withValues(alpha: 0.15),
+              ),
+              child: Row(
+                children: [
+                  Icon(icon, size: 14, color: color),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      title,
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: color),
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () => setState(() => _activeTriggerType = null),
+                    child: const Icon(Icons.close, size: 14),
+                  ),
+                ],
+              ),
+            ),
+            Flexible(
+              child: items.isEmpty
+                  ? const Padding(
+                      padding: EdgeInsets.all(12.0),
+                      child: Text('No matching items found', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                    )
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: items.length,
+                      separatorBuilder: (_, __) => const Divider(height: 1),
+                      itemBuilder: (_, idx) => items[idx],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilteredReportCard(
+    BuildContext context,
+    InspectorViewModel vm,
+    AiToolResult result,
+  ) {
+    final d = result.data;
+    final matchingCount = d['matchingPacketCount'] as int? ?? 0;
+    final percentage = d['percentage'] as String? ?? '0.0';
+    final totalBytes = d['totalBytes'] as int? ?? 0;
+    final timeSpan = (d['timeSpan'] as num?)?.toDouble() ?? 0.0;
+    final protocols = (d['protocols'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+    final senders = (d['senders'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+    final receivers = (d['receivers'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+    final samplePackets = (d['samplePackets'] as List<dynamic>? ?? []);
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.indigoAccent.withValues(alpha: 0.6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.analytics_outlined, size: 16, color: Colors.indigoAccent),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  'Filtered Traffic Report',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.indigoAccent.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  '$percentage% of capture',
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.indigoAccent),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // High-level metrics
+          Row(
+            children: [
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Packets', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                      Text('$matchingCount', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Volume', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                      Text('${(totalBytes / 1024).toStringAsFixed(1)} KB', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text('Active Span', style: TextStyle(fontSize: 10, color: Colors.grey)),
+                      Text('${timeSpan.toStringAsFixed(2)}s', style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+
+          // Referenced Tags
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              ...protocols.map((p) => Chip(
+                    avatar: const Icon(Icons.tune, size: 10, color: Colors.purpleAccent),
+                    label: Text('/p:$p', style: const TextStyle(fontSize: 10)),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                  )),
+              ...senders.map((s) => Chip(
+                    avatar: const Icon(Icons.arrow_upward, size: 10, color: Colors.blueAccent),
+                    label: Text('/s:$s', style: const TextStyle(fontSize: 10)),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                  )),
+              ...receivers.map((r) => Chip(
+                    avatar: const Icon(Icons.arrow_downward, size: 10, color: Colors.greenAccent),
+                    label: Text('/r:$r', style: const TextStyle(fontSize: 10)),
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                  )),
+            ],
+          ),
+
+          // Sample Packets list
+          if (samplePackets.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            const Text('Sample Packets:', style: TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            ...samplePackets.take(3).map((p) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Row(
+                    children: [
+                      Text('#${p['packetNo']}', style: const TextStyle(fontSize: 10, fontFamily: 'monospace', color: Colors.indigoAccent)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          '${p['srcIp']} → ${p['dstIp']} (${p['protocol']})',
+                          style: const TextStyle(fontSize: 10, fontFamily: 'monospace'),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                )),
+          ],
+
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              Expanded(
+                child: FilledButton.icon(
+                  icon: const Icon(Icons.filter_alt, size: 14),
+                  label: const Text('Apply to Filter Bar', style: TextStyle(fontSize: 11)),
+                  onPressed: () {
+                    vm.applyQuickFilters(
+                      protocols: protocols.toSet(),
+                      senders: senders.toSet(),
+                      receivers: receivers.toSet(),
+                    );
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(content: Text('Applied $matchingCount filtered packets to main screen!')),
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(width: 6),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.download, size: 14),
+                label: const Text('CSV', style: TextStyle(fontSize: 11)),
+                onPressed: () {
+                  final csv = CsvExportService.exportTableToCsv(
+                    headers: ['Packet #', 'Time (s)', 'Source IP', 'Dest IP', 'Protocol', 'Summary'],
+                    dataRows: samplePackets.map((p) => [
+                      p['packetNo'],
+                      p['timestampSeconds'],
+                      '${p['srcIp']}:${p['srcPort'] ?? ""}',
+                      '${p['dstIp']}:${p['dstPort'] ?? ""}',
+                      p['protocol'],
+                      p['summary'],
+                    ]).toList(),
+                  );
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Exported filtered packets to CSV (${csv.length} bytes)')),
+                  );
+                },
+              ),
+            ],
           ),
         ],
       ),

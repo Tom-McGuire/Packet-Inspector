@@ -142,6 +142,7 @@ class CustomProtocolRule {
     this.magicBytesOffset,
     this.magicBytesHex,
     this.fieldSlices = const [],
+    this.isVisible = true,
   });
 
   final String id;
@@ -155,6 +156,37 @@ class CustomProtocolRule {
   final int? magicBytesOffset;
   final List<int>? magicBytesHex;
   final List<ProtocolFieldSlice> fieldSlices;
+  final bool isVisible;
+
+  CustomProtocolRule copyWith({
+    String? id,
+    String? name,
+    int? colorHex,
+    TriageStatus? defaultTriageStatus,
+    int? ipProtocol,
+    int? port,
+    PortMatchDirection? portDirection,
+    String? ipAddressFilter,
+    int? magicBytesOffset,
+    List<int>? magicBytesHex,
+    List<ProtocolFieldSlice>? fieldSlices,
+    bool? isVisible,
+  }) {
+    return CustomProtocolRule(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      colorHex: colorHex ?? this.colorHex,
+      defaultTriageStatus: defaultTriageStatus ?? this.defaultTriageStatus,
+      ipProtocol: ipProtocol ?? this.ipProtocol,
+      port: port ?? this.port,
+      portDirection: portDirection ?? this.portDirection,
+      ipAddressFilter: ipAddressFilter ?? this.ipAddressFilter,
+      magicBytesOffset: magicBytesOffset ?? this.magicBytesOffset,
+      magicBytesHex: magicBytesHex ?? this.magicBytesHex,
+      fieldSlices: fieldSlices ?? this.fieldSlices,
+      isVisible: isVisible ?? this.isVisible,
+    );
+  }
 
   /// Specificity score determines evaluation order:
   /// More specific rules (Tier 2 magic bytes, IP filters) MUST be tested before generic (Tier 1 port-only) rules!
@@ -283,6 +315,7 @@ class CustomProtocolRule {
         'magicBytesOffset': magicBytesOffset,
         'magicBytesHex': magicBytesHex,
         'fieldSlices': fieldSlices.map((s) => s.toJson()).toList(),
+        'isVisible': isVisible,
       };
 
   factory CustomProtocolRule.fromJson(Map<String, dynamic> json) {
@@ -306,6 +339,7 @@ class CustomProtocolRule {
                   ProtocolFieldSlice.fromJson(e as Map<String, dynamic>))
               .toList() ??
           const [],
+      isVisible: json['isVisible'] as bool? ?? true,
     );
   }
 

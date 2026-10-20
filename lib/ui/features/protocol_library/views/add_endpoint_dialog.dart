@@ -222,6 +222,7 @@ class _AddEndpointDialogState extends State<AddEndpointDialog> {
       port: port,
       colorHex: _selectedColorHex,
       type: widget.type,
+      isVisible: widget.existingRule?.isVisible ?? true,
     );
 
     Navigator.of(context).pop(rule);

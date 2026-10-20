@@ -7,7 +7,7 @@ import 'dual_mode_filter_bar.dart';
 import 'timeline_spike_scrubber.dart';
 import 'packet_table_view.dart';
 import 'hex_byte_inspector.dart';
-import '../../protocol_library/views/protocol_library_dialog.dart';
+import '../../protocol_library/views/custom_library_dialog.dart';
 
 class InspectorScreen extends StatelessWidget {
   const InspectorScreen({super.key, this.aiPanelSlot});
@@ -23,19 +23,22 @@ class InspectorScreen extends StatelessWidget {
         centerTitle: false,
         titleSpacing: 16,
         title: Row(
+          mainAxisSize: MainAxisSize.min,
           children: [
             const Icon(Icons.radar, color: Colors.indigoAccent),
-            const SizedBox(width: 10),
-            const Text(
-              'Packet Inspector',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            const SizedBox(width: 8),
+            const Flexible(
+              child: Text(
+                'Packet Inspector',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                overflow: TextOverflow.ellipsis,
+              ),
             ),
-            const SizedBox(width: 12),
             if (vm.loadedFileName != null) ...[
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               Flexible(
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
                     borderRadius: BorderRadius.circular(12),
@@ -76,16 +79,13 @@ class InspectorScreen extends StatelessWidget {
           ),
           const SizedBox(width: 8),
 
-          // Protocol Library Button
-          IconButton(
-            tooltip: 'Protocol Library (${vm.customRules.length})',
-            icon: Badge(
-              label: Text('${vm.customRules.length}'),
-              child: const Icon(Icons.tune, size: 20),
-            ),
+          // Custom Library Button
+          OutlinedButton.icon(
+            icon: const Icon(Icons.menu_book, size: 16),
+            label: const Text('Custom Library'),
             onPressed: () => showDialog(
               context: context,
-              builder: (ctx) => ProtocolLibraryDialog(viewModel: vm),
+              builder: (ctx) => CustomLibraryDialog(viewModel: vm),
             ),
           ),
           const SizedBox(width: 8),

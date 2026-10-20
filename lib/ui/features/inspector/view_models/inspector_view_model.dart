@@ -53,10 +53,12 @@ class InspectorViewModel extends ChangeNotifier {
   int _pageSize = defaultPageSize;
   bool _isLoadingMore = false;
   bool _hasMorePackets = false;
+  bool _showAutoDetected = true;
 
   // Getters
   bool get isTriageMode => _isTriageMode;
   bool get silenceLanChatter => _silenceLanChatter;
+  bool get showAutoDetected => _showAutoDetected;
   Set<TriageStatus> get selectedTriageStatuses => _selectedTriageStatuses;
   Set<String> get selectedProtocolPills => _selectedProtocolPills;
   Set<String> get selectedSenderKeys => _selectedSenderKeys;
@@ -276,9 +278,50 @@ class InspectorViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  void applyQuickFilters({
+    Set<String>? protocols,
+    Set<String>? senders,
+    Set<String>? receivers,
+  }) {
+    _isTriageMode = false;
+    _selectedProtocolPills.clear();
+    _selectedSenderKeys.clear();
+    _selectedReceiverKeys.clear();
+    if (protocols != null) _selectedProtocolPills.addAll(protocols);
+    if (senders != null) _selectedSenderKeys.addAll(senders);
+    if (receivers != null) _selectedReceiverKeys.addAll(receivers);
+    _refreshPackets();
+    notifyListeners();
+  }
+
+  void setShowAutoDetected(bool show) {
+    if (_showAutoDetected != show) {
+      _showAutoDetected = show;
+      notifyListeners();
+    }
+  }
+
   void addSender(EndpointRule rule) {
     _repository.addSender(rule);
     _selectedSenderKeys.add(rule.filterKey);
+    _refreshState();
+    notifyListeners();
+  }
+
+  void updateSender(EndpointRule sender) {
+    _repository.updateSender(sender);
+    _refreshState();
+    notifyListeners();
+  }
+
+  void toggleSenderVisibility(String id) {
+    final updated = _repository.senders.map((s) {
+      if (s.id == id) {
+        return s.copyWith(isVisible: !s.isVisible);
+      }
+      return s;
+    }).toList();
+    _repository.updateSenders(updated);
     _refreshState();
     notifyListeners();
   }
@@ -292,6 +335,24 @@ class InspectorViewModel extends ChangeNotifier {
   void addReceiver(EndpointRule rule) {
     _repository.addReceiver(rule);
     _selectedReceiverKeys.add(rule.filterKey);
+    _refreshState();
+    notifyListeners();
+  }
+
+  void updateReceiver(EndpointRule receiver) {
+    _repository.updateReceiver(receiver);
+    _refreshState();
+    notifyListeners();
+  }
+
+  void toggleReceiverVisibility(String id) {
+    final updated = _repository.receivers.map((r) {
+      if (r.id == id) {
+        return r.copyWith(isVisible: !r.isVisible);
+      }
+      return r;
+    }).toList();
+    _repository.updateReceivers(updated);
     _refreshState();
     notifyListeners();
   }
@@ -369,6 +430,18 @@ class InspectorViewModel extends ChangeNotifier {
     if (!rules.any((r) => r.id == updatedRule.id)) {
       rules.add(updatedRule);
     }
+    _repository.updateCustomProtocols(rules);
+    _refreshState();
+    notifyListeners();
+  }
+
+  void toggleProtocolVisibility(String ruleId) {
+    final rules = _repository.customRules.map((r) {
+      if (r.id == ruleId) {
+        return r.copyWith(isVisible: !r.isVisible);
+      }
+      return r;
+    }).toList();
     _repository.updateCustomProtocols(rules);
     _refreshState();
     notifyListeners();

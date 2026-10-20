@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'packet_ai_tools.dart';
+import 'ai_filter_references.dart';
 
 enum LlmBackendMode {
   deterministicLocal,
@@ -77,7 +78,11 @@ class LlmProviderService {
     AiToolResult? toolResult;
     String textReply = '';
 
-    if (lower.contains('top') || lower.contains('talker') || lower.contains('conversation')) {
+    final refs = AiFilterReferences.parse(prompt, tools.repository);
+    if (refs.hasAnyReferences) {
+      toolResult = tools.generateFilteredReport(refs: refs, userPrompt: prompt);
+      textReply = '${toolResult.summaryText}\n\n*Interactive filtered traffic card rendered below. Click "Apply to Filter Bar" to isolate this traffic on your main inspector screen.*';
+    } else if (lower.contains('top') || lower.contains('talker') || lower.contains('conversation')) {
       final metric = lower.contains('pkt') || lower.contains('packet') ? 'packets' : 'bytes';
       final unexpected = lower.contains('unexpected');
       toolResult = tools.getTopTalkers(metric: metric, limit: 5, onlyUnexpected: unexpected);
@@ -111,6 +116,12 @@ class LlmProviderService {
       throw Exception('Gemini API Key is empty. Please enter your API key in Settings.');
     }
 
+    final refs = AiFilterReferences.parse(prompt, tools.repository);
+    String enrichedPrompt = prompt;
+    if (refs.hasAnyReferences) {
+      enrichedPrompt = '$prompt\n\n[Context from Packet Inspector Library]:\n${refs.buildLibraryContextSummary()}';
+    }
+
     final url = Uri.parse(
       'https://generativelanguage.googleapis.com/v1beta/models/$geminiModel:generateContent?key=$geminiApiKey',
     );
@@ -119,7 +130,7 @@ class LlmProviderService {
       'contents': [
         {
           'role': 'user',
-          'parts': [{'text': prompt}],
+          'parts': [{'text': enrichedPrompt}],
         }
       ],
       'systemInstruction': {
@@ -160,11 +171,17 @@ class LlmProviderService {
     final cleanUrl = ollamaUrl.endsWith('/') ? ollamaUrl.substring(0, ollamaUrl.length - 1) : ollamaUrl;
     final endpoint = Uri.parse('$cleanUrl/v1/chat/completions');
 
+    final refs = AiFilterReferences.parse(prompt, tools.repository);
+    String enrichedPrompt = prompt;
+    if (refs.hasAnyReferences) {
+      enrichedPrompt = '$prompt\n\n[Context from Packet Inspector Library]:\n${refs.buildLibraryContextSummary()}';
+    }
+
     final payload = {
       'model': ollamaModel,
       'messages': [
         {'role': 'system', 'content': 'You are Packet Inspector AI. Analyze packet metadata succinctly.'},
-        {'role': 'user', 'content': prompt},
+        {'role': 'user', 'content': enrichedPrompt},
       ],
     };
 

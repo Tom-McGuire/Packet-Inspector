@@ -11,6 +11,7 @@ class EndpointRule {
     this.port,
     this.colorHex = 0xFF2196F3,
     this.type = EndpointType.sender,
+    this.isVisible = true,
   });
 
   final String id;
@@ -19,6 +20,7 @@ class EndpointRule {
   final int? port;
   final int colorHex;
   final EndpointType type;
+  final bool isVisible;
 
   String get displayName {
     if (port != null) {
@@ -43,6 +45,7 @@ class EndpointRule {
     int? port,
     int? colorHex,
     EndpointType? type,
+    bool? isVisible,
   }) {
     return EndpointRule(
       id: id ?? this.id,
@@ -51,6 +54,7 @@ class EndpointRule {
       port: port ?? this.port,
       colorHex: colorHex ?? this.colorHex,
       type: type ?? this.type,
+      isVisible: isVisible ?? this.isVisible,
     );
   }
 
@@ -61,6 +65,7 @@ class EndpointRule {
         'port': port,
         'colorHex': colorHex,
         'type': type.name,
+        'isVisible': isVisible,
       };
 
   factory EndpointRule.fromMap(Map<String, dynamic> map) {
@@ -73,6 +78,7 @@ class EndpointRule {
       type: (map['type'] as String?) == 'receiver'
           ? EndpointType.receiver
           : EndpointType.sender,
+      isVisible: map['isVisible'] as bool? ?? true,
     );
   }
 

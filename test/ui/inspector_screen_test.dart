@@ -1,9 +1,12 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:packet_inspector/data/repositories/packet_repository.dart';
+import 'package:packet_inspector/data/services/storage/protocol_library_service.dart';
 import 'package:packet_inspector/ui/features/inspector/view_models/inspector_view_model.dart';
 import 'package:packet_inspector/ui/features/inspector/views/inspector_screen.dart';
+import 'package:packet_inspector/ui/features/protocol_library/views/custom_library_dialog.dart';
 import 'package:packet_inspector/ui/features/protocol_library/views/add_protocol_dialog.dart';
 import 'package:packet_inspector/domain/models/custom_protocol_rule.dart';
 import 'package:packet_inspector/domain/models/endpoint_rule.dart';
@@ -291,5 +294,134 @@ void main() {
 
     expect(vm.selectedSenderKeys.isEmpty, isTrue);
     expect(vm.selectedReceiverKeys.isEmpty, isTrue);
+  });
+
+  testWidgets('Auto-Detected toggle hides standard and discovered filters from all 3 rows', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final tempDir = Directory.systemTemp.createTempSync('test_autodetect_');
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final repo = PacketRepository(
+      storageService: ProtocolLibraryService(storageDirectory: tempDir),
+    );
+    repo.loadDemoCapture();
+    repo.addCustomProtocol(const CustomProtocolRule(
+      id: 'proto_test',
+      name: 'Custom UDP Test',
+      colorHex: 0xFF9C27B0,
+      defaultTriageStatus: TriageStatus.expected,
+      port: 5000,
+    ));
+    repo.addSender(const EndpointRule(
+      id: 'sender_test',
+      name: 'Test Sender',
+      ipAddress: '10.0.0.1',
+      type: EndpointType.sender,
+    ));
+
+    final vm = InspectorViewModel(repository: repo);
+    vm.setTriageMode(false); // Quick filters
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<InspectorViewModel>.value(value: vm),
+        ],
+        child: const MaterialApp(
+          home: InspectorScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify Auto-Detected switch is present and initially ON
+    expect(find.text('Auto-Detected'), findsOneWidget);
+    expect(find.byWidgetPredicate((w) => w is FilterChip && w.label is Text && ((w.label as Text).data?.startsWith('DNS (') ?? false)), findsOneWidget);
+
+    // Toggle Auto-Detected switch OFF
+    final autoDetectedSwitch = find.byType(Switch).at(1);
+    await tester.tap(autoDetectedSwitch);
+    await tester.pumpAndSettle();
+
+    expect(vm.showAutoDetected, isFalse);
+    // Custom item is still present
+    expect(find.textContaining('Custom UDP Test'), findsOneWidget);
+    expect(find.textContaining('Test Sender'), findsOneWidget);
+    // Auto-detected standard protocols like DNS (1) are hidden from filter pills!
+    expect(find.byWidgetPredicate((w) => w is FilterChip && w.label is Text && ((w.label as Text).data?.startsWith('DNS (') ?? false)), findsNothing);
+  });
+
+  testWidgets('Custom Library dialog displays 3 tabs, edit and visibility toggle', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final tempDir = Directory.systemTemp.createTempSync('test_customlib_');
+    addTearDown(() => tempDir.deleteSync(recursive: true));
+    final repo = PacketRepository(
+      storageService: ProtocolLibraryService(storageDirectory: tempDir),
+    );
+    repo.loadDemoCapture();
+    repo.addCustomProtocol(const CustomProtocolRule(
+      id: 'proto_eye_test',
+      name: 'Visible Protocol',
+      colorHex: 0xFF9C27B0,
+      defaultTriageStatus: TriageStatus.expected,
+      port: 6000,
+      isVisible: true,
+    ));
+
+    final vm = InspectorViewModel(repository: repo);
+    vm.setTriageMode(false);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<InspectorViewModel>.value(value: vm),
+        ],
+        child: const MaterialApp(
+          home: InspectorScreen(),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Initially Visible Protocol is visible in quick-filter row
+    expect(find.textContaining('Visible Protocol'), findsOneWidget);
+
+    // Open Custom Library Dialog
+    final customLibBtn = find.text('Custom Library');
+    expect(customLibBtn, findsOneWidget);
+    await tester.tap(customLibBtn);
+    await tester.pumpAndSettle();
+
+    // Verify dialog title and 3 tabs
+    expect(find.text('Custom Library'), findsWidgets);
+    expect(find.textContaining('Protocols ('), findsOneWidget);
+    expect(find.textContaining('Senders ('), findsOneWidget);
+    expect(find.textContaining('Receivers ('), findsOneWidget);
+
+    // Verify eye visibility button, edit button, and delete button exist
+    expect(find.byIcon(Icons.visibility), findsOneWidget);
+    expect(find.byIcon(Icons.edit), findsOneWidget);
+    expect(find.byIcon(Icons.delete_outline), findsOneWidget);
+
+    // Tap Eye button to toggle visibility for 'Visible Protocol'
+    final eyeButton = find.byIcon(Icons.visibility);
+    await tester.tap(eyeButton);
+    await tester.pumpAndSettle();
+
+    // Now icon changes to visibility_off and badge says Hidden
+    expect(find.byIcon(Icons.visibility_off), findsOneWidget);
+    expect(find.text('Hidden'), findsOneWidget);
+
+    // Close Dialog
+    await tester.tap(find.text('Close'));
+    await tester.pumpAndSettle();
+
+    // Verify Visible Protocol is now hidden from the main screen filter bar
+    expect(find.textContaining('Visible Protocol'), findsNothing);
   });
 }

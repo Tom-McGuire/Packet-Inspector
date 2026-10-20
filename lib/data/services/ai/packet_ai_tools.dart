@@ -1,5 +1,6 @@
 import '../../../domain/models/packet_record.dart';
 import '../../repositories/packet_repository.dart';
+import 'ai_filter_references.dart';
 
 class AiToolResult {
   const AiToolResult({
@@ -173,6 +174,90 @@ class PacketAiTools {
         'magicBytesHex': magicHex,
         'magicBytesList': magicSlice,
         'sampleCount': packets.length,
+      },
+    );
+  }
+
+  AiToolResult generateFilteredReport({
+    required AiFilterReferences refs,
+    String? userPrompt,
+  }) {
+    final protocolPills = refs.allProtocolNames;
+    final senderFilters = refs.allSenderKeys;
+    final receiverFilters = refs.allReceiverKeys;
+
+    final matchingPacketCount = repository.getPacketCount(
+      isTriageMode: false,
+      protocolPills: protocolPills,
+      senderFilters: senderFilters,
+      receiverFilters: receiverFilters,
+      silenceLanChatter: false,
+    );
+
+    final totalCaptureCount = repository.getPacketCount(silenceLanChatter: false);
+    final percentage = totalCaptureCount > 0
+        ? (matchingPacketCount / totalCaptureCount * 100).toStringAsFixed(1)
+        : '0.0';
+
+    // Sample matching packets (up to 100)
+    final samplePackets = repository.queryPackets(
+      limit: 100,
+      isTriageMode: false,
+      protocolPills: protocolPills,
+      senderFilters: senderFilters,
+      receiverFilters: receiverFilters,
+      silenceLanChatter: false,
+    );
+
+    int totalBytes = 0;
+    for (final p in samplePackets) {
+      totalBytes += p.originalLength;
+    }
+
+    final double startSec = samplePackets.isNotEmpty ? samplePackets.first.timestampSeconds : 0.0;
+    final double endSec = samplePackets.isNotEmpty ? samplePackets.last.timestampSeconds : 0.0;
+    final double timeSpan = (endSec - startSec).abs();
+
+    final sb = StringBuffer();
+    sb.writeln('### 📊 Filtered Traffic Analysis');
+    sb.writeln(refs.buildLibraryContextSummary());
+    sb.writeln();
+    sb.writeln('**Capture Traffic Findings:**');
+    sb.writeln('• Matching Packets: $matchingPacketCount ($percentage% of capture)');
+    if (samplePackets.isNotEmpty) {
+      final avgLen = (totalBytes / samplePackets.length).round();
+      sb.writeln('• Sample Volume (${samplePackets.length} pkts): ${(totalBytes / 1024).toStringAsFixed(2)} KB (avg $avgLen bytes/pkt)');
+      sb.writeln('• Active Time Span: ${startSec.toStringAsFixed(3)}s → ${endSec.toStringAsFixed(3)}s (${timeSpan.toStringAsFixed(3)}s)');
+    } else {
+      sb.writeln('• No packets currently match this exact combination in the active capture.');
+    }
+
+    return AiToolResult(
+      toolName: 'generate_filtered_report',
+      summaryText: sb.toString().trim(),
+      widgetType: 'filtered_library_report',
+      data: {
+        'matchingPacketCount': matchingPacketCount,
+        'totalCaptureCount': totalCaptureCount,
+        'percentage': percentage,
+        'totalBytes': totalBytes,
+        'timeSpan': timeSpan,
+        'protocols': protocolPills.toList(),
+        'senders': senderFilters.toList(),
+        'receivers': receiverFilters.toList(),
+        'matchedProtocolSpecs': refs.matchedProtocolRules.map((r) => r.toJson()).toList(),
+        'matchedSenderSpecs': refs.matchedSenders.map((s) => s.toMap()).toList(),
+        'matchedReceiverSpecs': refs.matchedReceivers.map((r) => r.toMap()).toList(),
+        'samplePackets': samplePackets.take(5).map((p) => {
+          'packetNo': p.packetNo,
+          'timestampSeconds': p.timestampSeconds,
+          'srcIp': p.srcIp,
+          'dstIp': p.dstIp,
+          'srcPort': p.srcPort,
+          'dstPort': p.dstPort,
+          'protocol': p.detectedProtocol,
+          'summary': p.summary,
+        }).toList(),
       },
     );
   }

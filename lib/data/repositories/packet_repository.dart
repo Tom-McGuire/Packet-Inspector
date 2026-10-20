@@ -61,6 +61,19 @@ class PacketRepository {
     _storageService.saveSenders(_senders);
   }
 
+  void updateSender(EndpointRule sender) {
+    _senders = _senders.map((s) => s.id == sender.id ? sender : s).toList();
+    if (!_senders.any((s) => s.id == sender.id)) {
+      _senders.add(sender);
+    }
+    _storageService.saveSenders(_senders);
+  }
+
+  void updateSenders(List<EndpointRule> senders) {
+    _senders = List.from(senders);
+    _storageService.saveSenders(_senders);
+  }
+
   void deleteSender(String id) {
     _senders = _senders.where((s) => s.id != id).toList();
     _storageService.saveSenders(_senders);
@@ -68,6 +81,19 @@ class PacketRepository {
 
   void addReceiver(EndpointRule receiver) {
     _receivers = [..._receivers.where((r) => r.id != receiver.id), receiver];
+    _storageService.saveReceivers(_receivers);
+  }
+
+  void updateReceiver(EndpointRule receiver) {
+    _receivers = _receivers.map((r) => r.id == receiver.id ? receiver : r).toList();
+    if (!_receivers.any((r) => r.id == receiver.id)) {
+      _receivers.add(receiver);
+    }
+    _storageService.saveReceivers(_receivers);
+  }
+
+  void updateReceivers(List<EndpointRule> receivers) {
+    _receivers = List.from(receivers);
     _storageService.saveReceivers(_receivers);
   }
 

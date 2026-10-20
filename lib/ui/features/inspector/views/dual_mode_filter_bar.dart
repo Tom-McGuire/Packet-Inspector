@@ -52,6 +52,8 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
                 Row(
                   children: [
                     _buildModeSwitch(context, vm),
+                    const SizedBox(width: 8),
+                    _buildAutoDetectedSwitch(context, vm),
                     const SizedBox(width: 12),
                     if (hasActiveQuickFilters) ...[
                       ActionChip(
@@ -116,6 +118,42 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
           Switch(
             value: isTriage,
             onChanged: (val) => vm.setTriageMode(val),
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildAutoDetectedSwitch(BuildContext context, InspectorViewModel vm) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: Theme.of(context).colorScheme.outlineVariant,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.sensors,
+            size: 16,
+            color: vm.showAutoDetected
+                ? Theme.of(context).colorScheme.primary
+                : Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+          const SizedBox(width: 6),
+          const Text(
+            'Auto-Detected',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+          ),
+          const SizedBox(width: 6),
+          Switch(
+            value: vm.showAutoDetected,
+            onChanged: (val) => vm.setShowAutoDetected(val),
             materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
           ),
         ],
@@ -221,13 +259,17 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
     final customRules = vm.customRules;
     final protocolCounts = vm.protocolCounts;
     final seenCustomNames = <String>{};
-    final distinctCustomRules = customRules.where((r) => seenCustomNames.add(r.name)).toList();
-    final customRuleNames = distinctCustomRules.map((r) => r.name).toSet();
+    final distinctCustomRules = customRules
+        .where((r) => r.isVisible && seenCustomNames.add(r.name))
+        .toList();
+    final customRuleNames = customRules.map((r) => r.name).toSet();
 
     // Standard protocols that are not in custom rules, sorted by count descending
-    final standardEntries = protocolCounts.entries
-        .where((e) => !customRuleNames.contains(e.key))
-        .toList();
+    final standardEntries = vm.showAutoDetected
+        ? protocolCounts.entries
+            .where((e) => !customRuleNames.contains(e.key))
+            .toList()
+        : const <MapEntry<String, int>>[];
 
     return Row(
       children: [
@@ -320,14 +362,16 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
   }
 
   Widget _buildSenderFilterRow(BuildContext context, InspectorViewModel vm) {
-    final senders = vm.senders;
+    final senders = vm.senders.where((s) => s.isVisible).toList();
     final senderCounts = vm.senderCounts;
-    final senderLibraryKeys = senders.map((s) => s.filterKey).toSet();
-    final senderLibraryIps = senders.map((s) => s.ipAddress).toSet();
+    final senderLibraryKeys = vm.senders.map((s) => s.filterKey).toSet();
+    final senderLibraryIps = vm.senders.map((s) => s.ipAddress).toSet();
 
-    final discoveredEntries = senderCounts.entries
-        .where((e) => !senderLibraryKeys.contains(e.key) && !senderLibraryIps.contains(e.key))
-        .toList();
+    final discoveredEntries = vm.showAutoDetected
+        ? senderCounts.entries
+            .where((e) => !senderLibraryKeys.contains(e.key) && !senderLibraryIps.contains(e.key))
+            .toList()
+        : const <MapEntry<String, int>>[];
 
     return Row(
       children: [
@@ -420,14 +464,16 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
   }
 
   Widget _buildReceiverFilterRow(BuildContext context, InspectorViewModel vm) {
-    final receivers = vm.receivers;
+    final receivers = vm.receivers.where((r) => r.isVisible).toList();
     final receiverCounts = vm.receiverCounts;
-    final receiverLibraryKeys = receivers.map((r) => r.filterKey).toSet();
-    final receiverLibraryIps = receivers.map((r) => r.ipAddress).toSet();
+    final receiverLibraryKeys = vm.receivers.map((r) => r.filterKey).toSet();
+    final receiverLibraryIps = vm.receivers.map((r) => r.ipAddress).toSet();
 
-    final discoveredEntries = receiverCounts.entries
-        .where((e) => !receiverLibraryKeys.contains(e.key) && !receiverLibraryIps.contains(e.key))
-        .toList();
+    final discoveredEntries = vm.showAutoDetected
+        ? receiverCounts.entries
+            .where((e) => !receiverLibraryKeys.contains(e.key) && !receiverLibraryIps.contains(e.key))
+            .toList()
+        : const <MapEntry<String, int>>[];
 
     return Row(
       children: [
