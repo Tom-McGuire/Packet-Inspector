@@ -1,4 +1,8 @@
+import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../../../domain/models/custom_protocol_rule.dart';
 import '../../../../domain/models/endpoint_rule.dart';
 import '../../../../domain/models/packet_record.dart';
@@ -55,7 +59,7 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
 
     switch (_tabController.index) {
       case 1:
-        addLabel = 'Add Sender';
+        addLabel = 'Add Source';
         onAddPressed = () async {
           final newRule = await showDialog<EndpointRule>(
             context: context,
@@ -68,7 +72,7 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
         };
         break;
       case 2:
-        addLabel = 'Add Receiver';
+        addLabel = 'Add Destination';
         onAddPressed = () async {
           final newRule = await showDialog<EndpointRule>(
             context: context,
@@ -98,7 +102,7 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
 
     return Dialog(
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 780, maxHeight: 640),
+        constraints: const BoxConstraints(maxWidth: 820, maxHeight: 640),
         child: Padding(
           padding: const EdgeInsets.all(24.0),
           child: Column(
@@ -118,12 +122,30 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
                           style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                         ),
                         Text(
-                          '${rules.length} Protocols • ${senders.length} Senders • ${receivers.length} Receivers',
+                          '${rules.length} Protocols • ${senders.length} Sources • ${receivers.length} Destinations',
                           style: const TextStyle(fontSize: 12, color: Colors.grey),
                         ),
                       ],
                     ),
                   ),
+                  Tooltip(
+                    message: 'Import custom library bundle from JSON file',
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.file_upload_outlined, size: 16),
+                      label: const Text('Import'),
+                      onPressed: () => _handleImportLibrary(context, vm),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Tooltip(
+                    message: 'Export custom library bundle to JSON file',
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.file_download_outlined, size: 16),
+                      label: const Text('Export'),
+                      onPressed: () => _handleExportLibrary(context, vm),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
                   FilledButton.icon(
                     icon: const Icon(Icons.add, size: 16),
                     label: Text(addLabel),
@@ -141,6 +163,8 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
               // TabBar
               TabBar(
                 controller: _tabController,
+                isScrollable: true,
+                tabAlignment: TabAlignment.start,
                 tabs: [
                   Tab(
                     child: Row(
@@ -158,7 +182,7 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
                       children: [
                         const Icon(Icons.arrow_upward, size: 16),
                         const SizedBox(width: 6),
-                        Text('Senders (${senders.length})'),
+                        Text('Sources (${senders.length})'),
                       ],
                     ),
                   ),
@@ -168,7 +192,7 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
                       children: [
                         const Icon(Icons.arrow_downward, size: 16),
                         const SizedBox(width: 6),
-                        Text('Receivers (${receivers.length})'),
+                        Text('Destinations (${receivers.length})'),
                       ],
                     ),
                   ),
@@ -182,8 +206,8 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
                   controller: _tabController,
                   children: [
                     _buildProtocolsTab(context, vm, rules),
-                    _buildSendersTab(context, vm, senders),
-                    _buildReceiversTab(context, vm, receivers),
+                    _buildSourcesTab(context, vm, senders),
+                    _buildDestinationsTab(context, vm, receivers),
                   ],
                 ),
               ),
@@ -408,8 +432,8 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
     );
   }
 
-  // ================= Senders Tab =================
-  Widget _buildSendersTab(
+  // ================= Sources Tab =================
+  Widget _buildSourcesTab(
     BuildContext context,
     InspectorViewModel vm,
     List<EndpointRule> senders,
@@ -422,7 +446,7 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
             Icon(Icons.arrow_upward_outlined, size: 48, color: Colors.grey[400]),
             const SizedBox(height: 12),
             const Text(
-              'No saved senders yet.',
+              'No saved sources yet.',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 4),
@@ -521,7 +545,7 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
                   // 2. Edit Button
                   IconButton(
                     icon: const Icon(Icons.edit, size: 20),
-                    tooltip: 'Edit Sender',
+                    tooltip: 'Edit Source',
                     onPressed: () async {
                       final updated = await showDialog<EndpointRule>(
                         context: context,
@@ -540,13 +564,13 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
                   // 3. Delete Button
                   IconButton(
                     icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
-                    tooltip: 'Delete Sender',
+                    tooltip: 'Delete Source',
                     onPressed: () async {
                       final confirm = await showDialog<bool>(
                         context: context,
                         builder: (ctx) => AlertDialog(
-                          title: const Text('Delete Sender'),
-                          content: Text('Are you sure you want to delete "${sender.name}" from the sender library?'),
+                          title: const Text('Delete Source'),
+                          content: Text('Are you sure you want to delete "${sender.name}" from the source library?'),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.of(ctx).pop(false),
@@ -575,8 +599,8 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
     );
   }
 
-  // ================= Receivers Tab =================
-  Widget _buildReceiversTab(
+  // ================= Destinations Tab =================
+  Widget _buildDestinationsTab(
     BuildContext context,
     InspectorViewModel vm,
     List<EndpointRule> receivers,
@@ -589,7 +613,7 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
             Icon(Icons.arrow_downward_outlined, size: 48, color: Colors.grey[400]),
             const SizedBox(height: 12),
             const Text(
-              'No saved receivers yet.',
+              'No saved destinations yet.',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             ),
             const SizedBox(height: 4),
@@ -688,7 +712,7 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
                   // 2. Edit Button
                   IconButton(
                     icon: const Icon(Icons.edit, size: 20),
-                    tooltip: 'Edit Receiver',
+                    tooltip: 'Edit Destination',
                     onPressed: () async {
                       final updated = await showDialog<EndpointRule>(
                         context: context,
@@ -707,13 +731,13 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
                   // 3. Delete Button
                   IconButton(
                     icon: const Icon(Icons.delete_outline, size: 20, color: Colors.redAccent),
-                    tooltip: 'Delete Receiver',
+                    tooltip: 'Delete Destination',
                     onPressed: () async {
                       final confirm = await showDialog<bool>(
                         context: context,
                         builder: (ctx) => AlertDialog(
-                          title: const Text('Delete Receiver'),
-                          content: Text('Are you sure you want to delete "${receiver.name}" from the receiver library?'),
+                          title: const Text('Delete Destination'),
+                          content: Text('Are you sure you want to delete "${receiver.name}" from the destination library?'),
                           actions: [
                             TextButton(
                               onPressed: () => Navigator.of(ctx).pop(false),
@@ -775,5 +799,70 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
         style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: fg),
       ),
     );
+  }
+
+  Future<void> _handleExportLibrary(BuildContext context, InspectorViewModel vm) async {
+    try {
+      final jsonBundle = vm.exportLibraryBundle();
+      final uri = await FilePicker.saveFile(
+        dialogTitle: 'Export Custom Library',
+        fileName: 'packet_inspector_library.json',
+        bytes: Uint8List.fromList(utf8.encode(jsonBundle)),
+      );
+      if (uri != null) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Custom library exported successfully to $uri')),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to export library: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
+  Future<void> _handleImportLibrary(BuildContext context, InspectorViewModel vm) async {
+    try {
+      final files = await FilePicker.pickFiles(
+        dialogTitle: 'Import Custom Library',
+        type: FileType.custom,
+        allowedExtensions: ['json'],
+      );
+      if (files.isNotEmpty) {
+        final path = files.first.path;
+        final String content;
+        if (path != null) {
+          content = await File(path).readAsString();
+        } else {
+          final bytes = await files.first.readAsBytes();
+          content = utf8.decode(bytes);
+        }
+
+        final counts = vm.importLibraryBundle(content);
+        final p = counts['protocols'] ?? 0;
+        final s = counts['sources'] ?? 0;
+        final d = counts['destinations'] ?? 0;
+
+        if (context.mounted) {
+          setState(() {});
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Successfully imported $p Protocols, $s Sources, $d Destinations!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to import library: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
   }
 }

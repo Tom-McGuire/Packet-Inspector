@@ -303,6 +303,8 @@ class CustomProtocolRule {
     return values;
   }
 
+  Map<String, dynamic> toMap() => toJson();
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
@@ -317,6 +319,9 @@ class CustomProtocolRule {
         'fieldSlices': fieldSlices.map((s) => s.toJson()).toList(),
         'isVisible': isVisible,
       };
+
+  factory CustomProtocolRule.fromMap(Map<String, dynamic> map) =>
+      CustomProtocolRule.fromJson(map);
 
   factory CustomProtocolRule.fromJson(Map<String, dynamic> json) {
     return CustomProtocolRule(

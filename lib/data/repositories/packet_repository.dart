@@ -52,14 +52,21 @@ class PacketRepository {
   List<CustomProtocolRule> get customRules => List.unmodifiable(_customRules);
   List<EndpointRule> get senders => List.unmodifiable(_senders);
   List<EndpointRule> get receivers => List.unmodifiable(_receivers);
+  List<EndpointRule> get sources => senders;
+  List<EndpointRule> get destinations => receivers;
   BaselineProfile get baselineProfile => _baselineProfile;
   PacketDatabaseService get dbService => _dbService;
+  ProtocolLibraryService get storageService => _storageService;
   String? get loadedFilePath => _loadedFilePath;
 
   void addSender(EndpointRule sender) {
     _senders = [..._senders.where((s) => s.id != sender.id), sender];
     _storageService.saveSenders(_senders);
   }
+
+  void addSource(EndpointRule source) => addSender(source);
+  void updateSource(EndpointRule source) => updateSender(source);
+  void deleteSource(String id) => deleteSender(id);
 
   void updateSender(EndpointRule sender) {
     _senders = _senders.map((s) => s.id == sender.id ? sender : s).toList();
@@ -82,6 +89,83 @@ class PacketRepository {
   void addReceiver(EndpointRule receiver) {
     _receivers = [..._receivers.where((r) => r.id != receiver.id), receiver];
     _storageService.saveReceivers(_receivers);
+  }
+
+  void addDestination(EndpointRule destination) => addReceiver(destination);
+  void updateDestination(EndpointRule destination) => updateReceiver(destination);
+  void deleteDestination(String id) => deleteReceiver(id);
+
+  String exportLibraryBundle() {
+    return _storageService.exportLibraryBundleJson(
+      protocols: _customRules,
+      sources: _senders,
+      destinations: _receivers,
+    );
+  }
+
+  Map<String, int> importLibraryBundle(String jsonStr) {
+    final parsed = _storageService.importLibraryBundleJson(jsonStr);
+    final newProtos = parsed['protocols'] as List<CustomProtocolRule>;
+    final newSources = parsed['sources'] as List<EndpointRule>;
+    final newDests = parsed['destinations'] as List<EndpointRule>;
+
+    int importedProtos = 0;
+    if (newProtos.isNotEmpty) {
+      final existingIds = _customRules.map((r) => r.id).toSet();
+      final updatedList = List<CustomProtocolRule>.from(_customRules);
+      for (final p in newProtos) {
+        if (!existingIds.contains(p.id)) {
+          updatedList.add(p);
+        } else {
+          final idx = updatedList.indexWhere((r) => r.id == p.id);
+          if (idx != -1) updatedList[idx] = p;
+        }
+        importedProtos++;
+      }
+      _customRules = updatedList;
+      _storageService.saveCustomProtocols(_customRules);
+      _dbService.relabelAllCustomProtocols(_customRules);
+    }
+
+    int importedSources = 0;
+    if (newSources.isNotEmpty) {
+      final existingIds = _senders.map((s) => s.id).toSet();
+      final updatedList = List<EndpointRule>.from(_senders);
+      for (final s in newSources) {
+        if (!existingIds.contains(s.id)) {
+          updatedList.add(s);
+        } else {
+          final idx = updatedList.indexWhere((r) => r.id == s.id);
+          if (idx != -1) updatedList[idx] = s;
+        }
+        importedSources++;
+      }
+      _senders = updatedList;
+      _storageService.saveSenders(_senders);
+    }
+
+    int importedDests = 0;
+    if (newDests.isNotEmpty) {
+      final existingIds = _receivers.map((r) => r.id).toSet();
+      final updatedList = List<EndpointRule>.from(_receivers);
+      for (final d in newDests) {
+        if (!existingIds.contains(d.id)) {
+          updatedList.add(d);
+        } else {
+          final idx = updatedList.indexWhere((r) => r.id == d.id);
+          if (idx != -1) updatedList[idx] = d;
+        }
+        importedDests++;
+      }
+      _receivers = updatedList;
+      _storageService.saveReceivers(_receivers);
+    }
+
+    return {
+      'protocols': importedProtos,
+      'sources': importedSources,
+      'destinations': importedDests,
+    };
   }
 
   void updateReceiver(EndpointRule receiver) {
@@ -335,6 +419,10 @@ class PacketRepository {
   }
 
   List<TimelineBucket> getTimelineBuckets() => _dbService.queryTimelineBuckets();
+
+  Map<int, double> getPortBandwidth({int limit = 10}) => _dbService.queryPortBandwidth(limit: limit);
+
+  double getCaptureBandwidthBps() => _dbService.queryCaptureBandwidthBps();
 
   Map<String, int> getProtocolCounts() => _dbService.queryProtocolCounts();
 

@@ -26,6 +26,26 @@ class TimelineBucket {
   double get minGlobalDeltaMs => minGlobalDeltaUs / 1000.0;
   double get maxStreamDeltaMs => maxStreamDeltaUs / 1000.0;
 
+  double get durationSeconds {
+    final diff = bucketEndUs - bucketStartUs;
+    return diff > 0 ? diff / 1000000.0 : 1.0;
+  }
+
+  double get bytesPerSecond => durationSeconds > 0 ? totalBytes / durationSeconds : 0.0;
+  double get bitsPerSecond => bytesPerSecond * 8.0;
+  double get kbps => bitsPerSecond / 1000.0;
+  double get mbps => bitsPerSecond / 1000000.0;
+
+  String get formattedBandwidth {
+    if (mbps >= 1.0) {
+      return '${mbps.toStringAsFixed(2)} Mbps';
+    } else if (kbps >= 1.0) {
+      return '${kbps.toStringAsFixed(1)} Kbps';
+    } else {
+      return '${bitsPerSecond.toStringAsFixed(0)} bps';
+    }
+  }
+
   Map<String, dynamic> toMap() => {
         'bucket_index': bucketIndex,
         'bucket_start_us': bucketStartUs,

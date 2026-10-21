@@ -256,8 +256,8 @@ void main() {
 
       // Verify filter shortcut chips exist
       expect(find.text('/p Protocol'), findsOneWidget);
-      expect(find.text('/s Sender'), findsOneWidget);
-      expect(find.text('/r Receiver'), findsOneWidget);
+      expect(find.text('/s Source'), findsOneWidget);
+      expect(find.text('/d Destination'), findsOneWidget);
 
       // Tap '/p Protocol' chip to open protocol suggestion popup
       await tester.tap(find.text('/p Protocol'));

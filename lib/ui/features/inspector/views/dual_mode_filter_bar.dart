@@ -382,7 +382,7 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
             children: [
               Icon(Icons.arrow_upward, size: 14, color: Colors.blueAccent),
               SizedBox(width: 4),
-              Text('Senders', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              Text('Sources', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
             ],
           ),
         ),
@@ -391,7 +391,7 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                // Sender Library Pills
+                // Source Library Pills
                 ...senders.map((rule) {
                   final count = senderCounts[rule.filterKey] ?? 0;
                   final isSelected = vm.selectedSenderKeys.contains(rule.filterKey);
@@ -406,18 +406,18 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
                       label: Text('${rule.name} ($count)'),
                       selected: isSelected,
                       onSelected: (_) => vm.toggleSenderPill(rule.filterKey),
-                      tooltip: 'Sender: ${rule.displayName}',
+                      tooltip: 'Source: ${rule.displayName}',
                     ),
                   );
                 }),
 
-                // Add Sender Chip Button
+                // Add Source Chip Button
                 Padding(
                   padding: const EdgeInsets.only(right: 6.0),
                   child: ActionChip(
                     avatar: const Icon(Icons.add, size: 14),
-                    label: const Text('Add Sender'),
-                    tooltip: 'Add new device to Sender library',
+                    label: const Text('Add Source'),
+                    tooltip: 'Add new device to Source library',
                     onPressed: () async {
                       final newRule = await showDialog<EndpointRule>(
                         context: context,
@@ -484,7 +484,7 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
             children: [
               Icon(Icons.arrow_downward, size: 14, color: Colors.greenAccent),
               SizedBox(width: 4),
-              Text('Receivers', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              Text('Destinations', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
             ],
           ),
         ),
@@ -493,7 +493,7 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
             scrollDirection: Axis.horizontal,
             child: Row(
               children: [
-                // Receiver Library Pills
+                // Destination Library Pills
                 ...receivers.map((rule) {
                   final count = receiverCounts[rule.filterKey] ?? 0;
                   final isSelected = vm.selectedReceiverKeys.contains(rule.filterKey);
@@ -508,18 +508,18 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
                       label: Text('${rule.name} ($count)'),
                       selected: isSelected,
                       onSelected: (_) => vm.toggleReceiverPill(rule.filterKey),
-                      tooltip: 'Receiver: ${rule.displayName}',
+                      tooltip: 'Destination: ${rule.displayName}',
                     ),
                   );
                 }),
 
-                // Add Receiver Chip Button
+                // Add Destination Chip Button
                 Padding(
                   padding: const EdgeInsets.only(right: 6.0),
                   child: ActionChip(
                     avatar: const Icon(Icons.add, size: 14),
-                    label: const Text('Add Receiver'),
-                    tooltip: 'Add new device / multicast group to Receiver library',
+                    label: const Text('Add Destination'),
+                    tooltip: 'Add new device / multicast group to Destination library',
                     onPressed: () async {
                       final newRule = await showDialog<EndpointRule>(
                         context: context,

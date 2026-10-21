@@ -258,12 +258,12 @@ void main() {
 
     // Verify all 3 row headers exist
     expect(find.text('Protocols'), findsOneWidget);
-    expect(find.text('Senders'), findsOneWidget);
-    expect(find.text('Receivers'), findsOneWidget);
+    expect(find.text('Sources'), findsOneWidget);
+    expect(find.text('Destinations'), findsOneWidget);
 
-    // Verify 'Add Sender' and 'Add Receiver' buttons exist
-    expect(find.text('Add Sender'), findsOneWidget);
-    expect(find.text('Add Receiver'), findsOneWidget);
+    // Verify 'Add Source' and 'Add Destination' buttons exist
+    expect(find.text('Add Source'), findsOneWidget);
+    expect(find.text('Add Destination'), findsOneWidget);
 
     // Verify library items are present in rows
     expect(find.textContaining('DNS Client'), findsOneWidget);
@@ -400,8 +400,8 @@ void main() {
     // Verify dialog title and 3 tabs
     expect(find.text('Custom Library'), findsWidgets);
     expect(find.textContaining('Protocols ('), findsOneWidget);
-    expect(find.textContaining('Senders ('), findsOneWidget);
-    expect(find.textContaining('Receivers ('), findsOneWidget);
+    expect(find.textContaining('Sources ('), findsOneWidget);
+    expect(find.textContaining('Destinations ('), findsOneWidget);
 
     // Verify eye visibility button, edit button, and delete button exist
     expect(find.byIcon(Icons.visibility), findsOneWidget);

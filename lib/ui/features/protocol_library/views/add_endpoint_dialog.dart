@@ -40,7 +40,7 @@ class _AddEndpointDialogState extends State<AddEndpointDialog> {
   void initState() {
     super.initState();
     final rule = widget.existingRule;
-    final defaultName = widget.type == EndpointType.sender ? 'Sender' : 'Receiver';
+    final defaultName = widget.type == EndpointType.sender ? 'Source' : 'Destination';
 
     if (rule != null) {
       _nameCtrl = TextEditingController(text: rule.name);
@@ -66,7 +66,7 @@ class _AddEndpointDialogState extends State<AddEndpointDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final typeName = widget.type == EndpointType.sender ? 'Sender' : 'Receiver';
+    final typeName = widget.type == EndpointType.sender ? 'Source' : 'Destination';
     final isEditing = widget.existingRule != null;
 
     return Dialog(

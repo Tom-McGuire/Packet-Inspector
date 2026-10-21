@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:convert';
 import '../../../domain/models/custom_protocol_rule.dart';
 import '../../../domain/models/baseline_profile.dart';
 import '../../../domain/models/endpoint_rule.dart';
@@ -116,5 +117,75 @@ class ProtocolLibraryService {
       final jsonStr = EndpointRule.serializeList(receivers);
       _receiversFile.writeAsStringSync(jsonStr);
     } catch (_) {}
+  }
+
+  String exportLibraryBundleJson({
+    required List<CustomProtocolRule> protocols,
+    required List<EndpointRule> sources,
+    required List<EndpointRule> destinations,
+  }) {
+    final bundle = {
+      'format': 'packet_inspector_library',
+      'version': 1,
+      'exported_at': DateTime.now().toIso8601String(),
+      'protocols': protocols.map((p) => p.toMap()).toList(),
+      'sources': sources.map((s) => s.toMap()).toList(),
+      'destinations': destinations.map((d) => d.toMap()).toList(),
+    };
+    return const JsonEncoder.withIndent('  ').convert(bundle);
+  }
+
+  Map<String, dynamic> importLibraryBundleJson(String jsonStr) {
+    final decoded = jsonDecode(jsonStr);
+    final protocols = <CustomProtocolRule>[];
+    final sources = <EndpointRule>[];
+    final destinations = <EndpointRule>[];
+
+    if (decoded is Map<String, dynamic>) {
+      if (decoded['protocols'] is List) {
+        for (final item in decoded['protocols']) {
+          if (item is Map<String, dynamic>) {
+            protocols.add(CustomProtocolRule.fromMap(item));
+          }
+        }
+      }
+      final rawSources = decoded['sources'] ?? decoded['senders'];
+      if (rawSources is List) {
+        for (final item in rawSources) {
+          if (item is Map<String, dynamic>) {
+            sources.add(EndpointRule.fromMap(item));
+          }
+        }
+      }
+      final rawDests = decoded['destinations'] ?? decoded['receivers'];
+      if (rawDests is List) {
+        for (final item in rawDests) {
+          if (item is Map<String, dynamic>) {
+            destinations.add(EndpointRule.fromMap(item));
+          }
+        }
+      }
+    } else if (decoded is List) {
+      for (final item in decoded) {
+        if (item is Map<String, dynamic>) {
+          if (item.containsKey('ipProtocol') || item.containsKey('magicBytesHex')) {
+            protocols.add(CustomProtocolRule.fromMap(item));
+          } else if (item.containsKey('type')) {
+            final rule = EndpointRule.fromMap(item);
+            if (rule.type == EndpointType.sender) {
+              sources.add(rule);
+            } else {
+              destinations.add(rule);
+            }
+          }
+        }
+      }
+    }
+
+    return {
+      'protocols': protocols,
+      'sources': sources,
+      'destinations': destinations,
+    };
   }
 }

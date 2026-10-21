@@ -1,4 +1,6 @@
 import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
@@ -268,6 +270,33 @@ class InspectorScreen extends StatelessWidget {
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Close'),
+          ),
+          FilledButton.icon(
+            icon: const Icon(Icons.save_alt, size: 16),
+            label: const Text('Save CSV to File'),
+            onPressed: () async {
+              try {
+                final defaultFileName = '${title.toLowerCase().replaceAll(' ', '_')}.csv';
+                final uri = await FilePicker.saveFile(
+                  dialogTitle: 'Save CSV File',
+                  fileName: defaultFileName,
+                  bytes: Uint8List.fromList(utf8.encode(csvContent)),
+                );
+
+                if (uri != null && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Saved CSV successfully!')),
+                  );
+                  Navigator.of(ctx).pop();
+                }
+              } catch (e) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text('Failed to save file: $e'), backgroundColor: Colors.red),
+                  );
+                }
+              }
+            },
           ),
         ],
       ),

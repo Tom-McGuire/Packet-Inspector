@@ -1,7 +1,10 @@
+import 'dart:io';
+import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import '../../../../domain/models/custom_protocol_rule.dart';
-import '../../../../domain/models/endpoint_rule.dart';
 import '../../../../domain/models/packet_record.dart';
 import '../../../features/inspector/view_models/inspector_view_model.dart';
 import '../../../../data/services/ai/packet_ai_tools.dart';
@@ -39,7 +42,7 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
       role: 'assistant',
       text: '👋 Welcome to **Packet Inspector AI**!\n\n'
           'I can summarize your capture, hunt for timing spikes, chart top talkers, or generate specific reports on your custom library.\n\n'
-          '💡 **Filter Mentions**: Type `/p` for protocols, `/s` for senders, or `/r` for receivers (or use the chips below) to reference specific items!',
+          '💡 **Filter Mentions**: Type `/p` for protocols, `/s` for sources, or `/d` for destinations (or use the chips below) to reference specific items!',
     ));
   }
 
@@ -64,13 +67,14 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
     final cursor = selection.baseOffset;
     final textBeforeCursor = text.substring(0, cursor);
 
-    // Look for /p, /s, or /r token right before cursor
-    final match = RegExp(r'(?:^|\s)(/[psr])([^\s]*)$', caseSensitive: false).firstMatch(textBeforeCursor);
+    // Look for /p, /s, /d, or /r token right before cursor
+    final match = RegExp(r'(?:^|\s)(/[psrd])([^\s]*)$', caseSensitive: false).firstMatch(textBeforeCursor);
     if (match != null) {
-      final trigger = match.group(1)!.toLowerCase(); // '/p', '/s', '/r'
+      final trigger = match.group(1)!.toLowerCase(); // '/p', '/s', '/d', '/r'
       final rawQuery = match.group(2) ?? '';
       final query = rawQuery.startsWith(':') ? rawQuery.substring(1) : rawQuery;
-      final triggerType = trigger.substring(1);
+      final rawType = trigger.substring(1);
+      final triggerType = rawType == 'r' ? 'd' : rawType;
       final rawStart = match.start;
       final startIdx = textBeforeCursor[rawStart] == ' ' ? rawStart + 1 : rawStart;
 
@@ -455,9 +459,7 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
                     headers: ['Source IP', 'Dest IP', 'Protocol', 'Packets', 'Bytes'],
                     dataRows: talkers.map((t) => [t['src_ip'], t['dst_ip'], t['protocol'], t['packet_count'], t['total_bytes']]).toList(),
                   );
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Exported ${talkers.length} talkers to CSV (${csv.length} bytes)')),
-                  );
+                  _saveCsvFile(context, 'top_conversations.csv', csv);
                 },
               ),
             ],
@@ -683,6 +685,28 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
     );
   }
 
+  Future<void> _saveCsvFile(BuildContext context, String defaultName, String csvContent) async {
+    try {
+      final uri = await FilePicker.saveFile(
+        dialogTitle: 'Save CSV File',
+        fileName: defaultName,
+        bytes: Uint8List.fromList(utf8.encode(csvContent)),
+      );
+
+      if (uri != null && context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Saved CSV successfully!')),
+        );
+      }
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to save file: $e'), backgroundColor: Colors.red),
+        );
+      }
+    }
+  }
+
   Widget _buildReferenceHelperBar(BuildContext context, InspectorViewModel vm) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -707,7 +731,7 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
             const SizedBox(width: 4),
             ActionChip(
               avatar: const Icon(Icons.arrow_upward, size: 11, color: Colors.blueAccent),
-              label: const Text('/s Sender', style: TextStyle(fontSize: 10)),
+              label: const Text('/s Source', style: TextStyle(fontSize: 10)),
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
               onPressed: () {
@@ -721,12 +745,12 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
             const SizedBox(width: 4),
             ActionChip(
               avatar: const Icon(Icons.arrow_downward, size: 11, color: Colors.greenAccent),
-              label: const Text('/r Receiver', style: TextStyle(fontSize: 10)),
+              label: const Text('/d Destination', style: TextStyle(fontSize: 10)),
               visualDensity: VisualDensity.compact,
               padding: EdgeInsets.zero,
               onPressed: () {
                 setState(() {
-                  _activeTriggerType = 'r';
+                  _activeTriggerType = 'd';
                   _activeTriggerQuery = '';
                   _triggerStartIndex = _inputCtrl.selection.isValid ? _inputCtrl.selection.baseOffset : _inputCtrl.text.length;
                 });
@@ -790,7 +814,7 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
         ));
       }
     } else if (type == 's') {
-      title = 'Select Sender (/s)';
+      title = 'Select Source (/s)';
       icon = Icons.arrow_upward;
       color = Colors.blueAccent;
 
@@ -830,7 +854,7 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
         ));
       }
     } else {
-      title = 'Select Receiver (/r)';
+      title = 'Select Destination (/d)';
       icon = Icons.arrow_downward;
       color = Colors.greenAccent;
 
@@ -846,7 +870,7 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
             leading: CircleAvatar(radius: 6, backgroundColor: Color(r.colorHex)),
             title: Text(r.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
             subtitle: Text(r.port != null ? '${r.ipAddress}:${r.port}' : r.ipAddress, style: const TextStyle(fontSize: 10)),
-            onTap: () => _insertReference('r', r.filterKey),
+            onTap: () => _insertReference('d', r.filterKey),
           ),
         ));
       }
@@ -865,7 +889,7 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
             leading: const Icon(Icons.arrow_downward, size: 14, color: Colors.grey),
             title: Text(ip, style: const TextStyle(fontSize: 12)),
             subtitle: Text('$count pkts received', style: const TextStyle(fontSize: 10)),
-            onTap: () => _insertReference('r', ip),
+            onTap: () => _insertReference('d', ip),
           ),
         ));
       }
@@ -1059,7 +1083,7 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
                   )),
               ...receivers.map((r) => Chip(
                     avatar: const Icon(Icons.arrow_downward, size: 10, color: Colors.greenAccent),
-                    label: Text('/r:$r', style: const TextStyle(fontSize: 10)),
+                    label: Text('/d:$r', style: const TextStyle(fontSize: 10)),
                     visualDensity: VisualDensity.compact,
                     padding: EdgeInsets.zero,
                   )),
@@ -1124,9 +1148,7 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
                       p['summary'],
                     ]).toList(),
                   );
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Exported filtered packets to CSV (${csv.length} bytes)')),
-                  );
+                  _saveCsvFile(context, 'filtered_report_packets.csv', csv);
                 },
               ),
             ],

@@ -6,6 +6,7 @@ import '../view_models/inspector_view_model.dart';
 enum TimelineMetricMode {
   burstRate, // Packet bursts / Traffic rate
   streamLatency, // Max stream delta (ms)
+  bandwidth, // Bandwidth throughput (Kbps / Mbps)
 }
 
 class TimelineSpikeScrubber extends StatefulWidget {
@@ -43,52 +44,90 @@ class _TimelineSpikeScrubberState extends State<TimelineSpikeScrubber> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Header controls
-          Row(
-            children: [
-              const Icon(Icons.show_chart, size: 16),
-              const SizedBox(width: 6),
-              const Text(
-                'Delta-Time & Spike Timeline',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-              ),
-              const SizedBox(width: 16),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                const Icon(Icons.show_chart, size: 16),
+                const SizedBox(width: 6),
+                const Text(
+                  'Delta-Time & Spike Timeline',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+                const SizedBox(width: 16),
 
-              // Metric view toggle
-              SegmentedButton<TimelineMetricMode>(
-                segments: const [
-                  ButtonSegment(
-                    value: TimelineMetricMode.burstRate,
-                    label: Text('Traffic Bursts', style: TextStyle(fontSize: 11)),
+                // Metric view toggle
+                SegmentedButton<TimelineMetricMode>(
+                  segments: const [
+                    ButtonSegment(
+                      value: TimelineMetricMode.burstRate,
+                      label: Text('Bursts', style: TextStyle(fontSize: 11)),
+                    ),
+                    ButtonSegment(
+                      value: TimelineMetricMode.streamLatency,
+                      label: Text('Latency (Stalls)', style: TextStyle(fontSize: 11)),
+                    ),
+                    ButtonSegment(
+                      value: TimelineMetricMode.bandwidth,
+                      label: Text('Bandwidth', style: TextStyle(fontSize: 11)),
+                    ),
+                  ],
+                  selected: {_metricMode},
+                  onSelectionChanged: (set) {
+                    setState(() {
+                      _metricMode = set.first;
+                    });
+                  },
+                  style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  ButtonSegment(
-                    value: TimelineMetricMode.streamLatency,
-                    label: Text('Stream Latency (Stalls)', style: TextStyle(fontSize: 11)),
+                ),
+                const SizedBox(width: 12),
+
+                // Bandwidth summary indicator
+                Tooltip(
+                  message: vm.portBandwidths.isNotEmpty
+                      ? 'Top Ports by Bandwidth:\n' +
+                          vm.portBandwidths.entries
+                              .take(5)
+                              .map((e) => 'Port ${e.key}: ${InspectorViewModel.formatBandwidth(e.value)}')
+                              .join('\n')
+                      : 'Average and peak throughput across capture',
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: Colors.teal.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: Colors.teal.withValues(alpha: 0.3)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.speed, size: 13, color: Colors.teal),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Bandwidth: Avg ${vm.formattedAvgBandwidth} • Peak ${vm.formattedPeakBandwidth}',
+                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.teal),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                if (isZoomed) ...[
+                  const SizedBox(width: 12),
+                  ActionChip(
+                    avatar: const Icon(Icons.zoom_out, size: 14),
+                    label: Text(
+                      'Reset Zoom (${((vm.timeWindowStartUs ?? 0) / 1000000.0).toStringAsFixed(2)}s – ${((vm.timeWindowEndUs ?? 0) / 1000000.0).toStringAsFixed(2)}s)',
+                      style: const TextStyle(fontSize: 11),
+                    ),
+                    onPressed: () => vm.resetTimeRange(),
                   ),
                 ],
-                selected: {_metricMode},
-                onSelectionChanged: (set) {
-                  setState(() {
-                    _metricMode = set.first;
-                  });
-                },
-                style: const ButtonStyle(
-                  visualDensity: VisualDensity.compact,
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
-              ),
-
-              const Spacer(),
-
-              if (isZoomed)
-                ActionChip(
-                  avatar: const Icon(Icons.zoom_out, size: 14),
-                  label: Text(
-                    'Reset Zoom (${((vm.timeWindowStartUs ?? 0) / 1000000.0).toStringAsFixed(2)}s – ${((vm.timeWindowEndUs ?? 0) / 1000000.0).toStringAsFixed(2)}s)',
-                    style: const TextStyle(fontSize: 11),
-                  ),
-                  onPressed: () => vm.resetTimeRange(),
-                ),
-            ],
+              ],
+            ),
           ),
 
           const SizedBox(height: 6),
@@ -104,9 +143,14 @@ class _TimelineSpikeScrubberState extends State<TimelineSpikeScrubber> {
                     getTooltipItem: (group, groupIndex, rod, rodIndex) {
                       if (groupIndex >= buckets.length) return null;
                       final b = buckets[groupIndex];
-                      final metricTitle = _metricMode == TimelineMetricMode.burstRate
-                          ? '${b.packetCount} pkts'
-                          : '${b.maxStreamDeltaMs.toStringAsFixed(1)} ms stall';
+                      final String metricTitle;
+                      if (_metricMode == TimelineMetricMode.burstRate) {
+                        metricTitle = '${b.packetCount} pkts';
+                      } else if (_metricMode == TimelineMetricMode.streamLatency) {
+                        metricTitle = '${b.maxStreamDeltaMs.toStringAsFixed(1)} ms stall';
+                      } else {
+                        metricTitle = 'Bandwidth: ${b.formattedBandwidth}\nRate: ${(b.bytesPerSecond / 1024.0).toStringAsFixed(1)} KB/s (${b.totalBytes} B)';
+                      }
                       return BarTooltipItem(
                         'Time: ${b.startSeconds.toStringAsFixed(2)}s\n$metricTitle\n${b.unexpectedCount} unexpected\n(Click to zoom)',
                         TextStyle(
@@ -148,12 +192,16 @@ class _TimelineSpikeScrubberState extends State<TimelineSpikeScrubber> {
                         BarChartRodData(
                           toY: _metricMode == TimelineMetricMode.burstRate
                               ? buckets[i].packetCount.toDouble()
-                              : buckets[i].maxStreamDeltaMs,
+                              : (_metricMode == TimelineMetricMode.streamLatency
+                                  ? buckets[i].maxStreamDeltaMs
+                                  : (vm.peakBucketBandwidthBps >= 1000000.0 ? buckets[i].mbps : buckets[i].kbps)),
                           color: buckets[i].unexpectedCount > 0
                               ? Colors.redAccent
                               : (_metricMode == TimelineMetricMode.burstRate
                                   ? Theme.of(context).colorScheme.primary
-                                  : Colors.orangeAccent),
+                                  : (_metricMode == TimelineMetricMode.streamLatency
+                                      ? Colors.orangeAccent
+                                      : Colors.teal)),
                           width: 4,
                           borderRadius: BorderRadius.circular(2),
                         ),

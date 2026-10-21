@@ -30,6 +30,15 @@ class AiFilterReferences {
   final List<EndpointRule> matchedReceivers;
   final List<String> unmatchedReceiverIps;
 
+  List<String> get rawSources => rawSenders;
+  List<String> get rawDestinations => rawReceivers;
+  List<EndpointRule> get matchedSources => matchedSenders;
+  List<EndpointRule> get matchedDestinations => matchedReceivers;
+  List<String> get unmatchedSourceIps => unmatchedSenderIps;
+  List<String> get unmatchedDestinationIps => unmatchedReceiverIps;
+  Set<String> get allSourceKeys => allSenderKeys;
+  Set<String> get allDestinationKeys => allReceiverKeys;
+
   bool get hasAnyReferences =>
       rawProtocols.isNotEmpty || rawSenders.isNotEmpty || rawReceivers.isNotEmpty;
 
@@ -76,7 +85,7 @@ class AiFilterReferences {
       }
     }
 
-    final receiverRegex = RegExp(r'/r(?::|\s+)(?:"([^"]+)"|([^\s,]+))', caseSensitive: false);
+    final receiverRegex = RegExp(r'/(?:r|d)(?::|\s+)(?:"([^"]+)"|([^\s,]+))', caseSensitive: false);
     for (final match in receiverRegex.allMatches(text)) {
       final token = match.group(1) ?? match.group(2);
       if (token != null && token.trim().isNotEmpty) {

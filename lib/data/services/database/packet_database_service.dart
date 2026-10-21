@@ -538,6 +538,48 @@ class PacketDatabaseService {
     }
   }
 
+  Map<int, double> queryPortBandwidth({int limit = 10}) {
+    final range = _db.select('SELECT MIN(timestamp_us) as min_ts, MAX(timestamp_us) as max_ts FROM packets');
+    if (range.isEmpty || range.first['min_ts'] == null || range.first['max_ts'] == null) {
+      return {};
+    }
+    final minTs = range.first['min_ts'] as int;
+    final maxTs = range.first['max_ts'] as int;
+    final durationSec = (maxTs - minTs) > 0 ? (maxTs - minTs) / 1000000.0 : 1.0;
+
+    final rows = _db.select('''
+      SELECT
+        COALESCE(dst_port, src_port) as port,
+        SUM(captured_length) as total_bytes
+      FROM packets
+      WHERE COALESCE(dst_port, src_port) IS NOT NULL
+      GROUP BY port
+      ORDER BY total_bytes DESC
+      LIMIT $limit
+    ''');
+
+    final result = <int, double>{};
+    for (final r in rows) {
+      final port = r['port'] as int;
+      final bytes = (r['total_bytes'] as int?) ?? 0;
+      final bps = (bytes * 8.0) / durationSec;
+      result[port] = bps;
+    }
+    return result;
+  }
+
+  double queryCaptureBandwidthBps() {
+    final res = _db.select('SELECT MIN(timestamp_us) as min_ts, MAX(timestamp_us) as max_ts, SUM(captured_length) as total_bytes FROM packets');
+    if (res.isEmpty || res.first['min_ts'] == null || res.first['max_ts'] == null) {
+      return 0.0;
+    }
+    final minTs = res.first['min_ts'] as int;
+    final maxTs = res.first['max_ts'] as int;
+    final totalBytes = (res.first['total_bytes'] as int?) ?? 0;
+    final durationSec = (maxTs - minTs) > 0 ? (maxTs - minTs) / 1000000.0 : 1.0;
+    return (totalBytes * 8.0) / durationSec;
+  }
+
   Map<TriageStatus, int> queryTriageCounts({bool silenceLanChatter = false}) {
     final sql = silenceLanChatter
         ? '''

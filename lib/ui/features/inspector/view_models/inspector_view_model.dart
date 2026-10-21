@@ -55,6 +55,9 @@ class InspectorViewModel extends ChangeNotifier {
   bool _hasMorePackets = false;
   bool _showAutoDetected = true;
 
+  double _avgCaptureBandwidthBps = 0.0;
+  Map<int, double> _portBandwidths = {};
+
   // Getters
   bool get isTriageMode => _isTriageMode;
   bool get silenceLanChatter => _silenceLanChatter;
@@ -63,6 +66,8 @@ class InspectorViewModel extends ChangeNotifier {
   Set<String> get selectedProtocolPills => _selectedProtocolPills;
   Set<String> get selectedSenderKeys => _selectedSenderKeys;
   Set<String> get selectedReceiverKeys => _selectedReceiverKeys;
+  Set<String> get selectedSourceKeys => _selectedSenderKeys;
+  Set<String> get selectedDestinationKeys => _selectedReceiverKeys;
   Set<String> get selectedIps => _selectedIps;
   int? get timeWindowStartUs => _timeWindowStartUs;
   int? get timeWindowEndUs => _timeWindowEndUs;
@@ -74,6 +79,8 @@ class InspectorViewModel extends ChangeNotifier {
   Map<String, int> get protocolCounts => _protocolCounts;
   Map<String, int> get senderCounts => _senderCounts;
   Map<String, int> get receiverCounts => _receiverCounts;
+  Map<String, int> get sourceCounts => _senderCounts;
+  Map<String, int> get destinationCounts => _receiverCounts;
   Map<TriageStatus, int> get triageCounts => _triageCounts;
   int get totalPacketCount => _totalPacketCount;
   bool get isAiPanelOpen => _isAiPanelOpen;
@@ -82,12 +89,52 @@ class InspectorViewModel extends ChangeNotifier {
   List<CustomProtocolRule> get customRules => _repository.customRules;
   List<EndpointRule> get senders => _repository.senders;
   List<EndpointRule> get receivers => _repository.receivers;
+  List<EndpointRule> get sources => _repository.sources;
+  List<EndpointRule> get destinations => _repository.destinations;
   BaselineProfile get baselineProfile => _repository.baselineProfile;
   String get sortColumn => _sortColumn;
   bool get sortAscending => _sortAscending;
   int get pageSize => _pageSize;
   bool get isLoadingMore => _isLoadingMore;
   bool get hasMorePackets => _hasMorePackets;
+
+  double get avgCaptureBandwidthBps => _avgCaptureBandwidthBps;
+  Map<int, double> get portBandwidths => _portBandwidths;
+  double get peakBucketBandwidthBps {
+    if (_timelineBuckets.isEmpty) return 0.0;
+    return _timelineBuckets.map((b) => b.bitsPerSecond).reduce((a, b) => a > b ? a : b);
+  }
+  String get formattedAvgBandwidth => formatBandwidth(_avgCaptureBandwidthBps);
+  String get formattedPeakBandwidth => formatBandwidth(peakBucketBandwidthBps);
+
+  static String formatBandwidth(double bps) {
+    if (bps >= 1000000.0) {
+      return '${(bps / 1000000.0).toStringAsFixed(2)} Mbps';
+    } else if (bps >= 1000.0) {
+      return '${(bps / 1000.0).toStringAsFixed(1)} Kbps';
+    } else {
+      return '${bps.toStringAsFixed(0)} bps';
+    }
+  }
+
+  void addSource(EndpointRule rule) => addSender(rule);
+  void updateSource(EndpointRule rule) => updateSender(rule);
+  void deleteSource(String id) => deleteSender(id);
+  void toggleSourceVisibility(String id) => toggleSenderVisibility(id);
+
+  void addDestination(EndpointRule rule) => addReceiver(rule);
+  void updateDestination(EndpointRule rule) => updateReceiver(rule);
+  void deleteDestination(String id) => deleteReceiver(id);
+  void toggleDestinationVisibility(String id) => toggleReceiverVisibility(id);
+
+  String exportLibraryBundle() => _repository.exportLibraryBundle();
+
+  Map<String, int> importLibraryBundle(String jsonStr) {
+    final result = _repository.importLibraryBundle(jsonStr);
+    _refreshState();
+    notifyListeners();
+    return result;
+  }
 
   void setPageSize(int size) {
     if (size > 0 && _pageSize != size) {
@@ -550,6 +597,8 @@ class InspectorViewModel extends ChangeNotifier {
 
     _triageCounts = _repository.getTriageCounts(silenceLanChatter: _silenceLanChatter);
     _timelineBuckets = _repository.getTimelineBuckets();
+    _avgCaptureBandwidthBps = _repository.getCaptureBandwidthBps();
+    _portBandwidths = _repository.getPortBandwidth(limit: 10);
     _refreshPackets();
   }
 

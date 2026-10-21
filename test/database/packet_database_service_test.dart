@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:packet_inspector/domain/models/packet_record.dart';
 import 'package:packet_inspector/domain/models/custom_protocol_rule.dart';
+import 'package:packet_inspector/domain/models/endpoint_rule.dart';
 import 'package:packet_inspector/data/services/database/packet_database_service.dart';
+import 'package:packet_inspector/data/services/storage/protocol_library_service.dart';
 import 'package:packet_inspector/data/services/export/csv_export_service.dart';
 import 'package:packet_inspector/data/repositories/packet_repository.dart';
 
@@ -329,6 +332,74 @@ void main() {
       expect(page1.first.packetNo, isNot(equals(page2.first.packetNo)));
 
       repo.dispose();
+    });
+
+    test('Bandwidth throughput queries calculate bps and top ports', () {
+      final repo = PacketRepository();
+      repo.loadDemoCapture();
+
+      final bps = repo.getCaptureBandwidthBps();
+      expect(bps, greaterThan(0));
+
+      final portBandwidths = repo.getPortBandwidth(limit: 5);
+      expect(portBandwidths.isNotEmpty, isTrue);
+      expect(portBandwidths.keys.first, isNotNull);
+      expect(portBandwidths.values.first, greaterThan(0));
+
+      repo.dispose();
+    });
+
+    test('Custom library bundle export and import round-trip', () {
+      final tempDir1 = Directory.systemTemp.createTempSync('lib_test_1_');
+      final tempDir2 = Directory.systemTemp.createTempSync('lib_test_2_');
+      final repo = PacketRepository(
+        storageService: ProtocolLibraryService(storageDirectory: tempDir1),
+      );
+      repo.addCustomProtocol(const CustomProtocolRule(
+        id: 'bundle_proto_1',
+        name: 'ArtNet Broadcast',
+        port: 6454,
+        colorHex: 0xFF2196F3,
+        defaultTriageStatus: TriageStatus.expected,
+        ipProtocol: 17,
+      ));
+      repo.addSource(const EndpointRule(
+        id: 'bundle_src_1',
+        name: 'Console A',
+        ipAddress: '10.0.0.100',
+        port: 6454,
+      ));
+      repo.addDestination(const EndpointRule(
+        id: 'bundle_dst_1',
+        name: 'Node 1',
+        ipAddress: '10.0.0.200',
+        port: 6454,
+        type: EndpointType.receiver,
+      ));
+
+      final exportedJson = repo.exportLibraryBundle();
+      expect(exportedJson, contains('packet_inspector_library'));
+      expect(exportedJson, contains('ArtNet Broadcast'));
+      expect(exportedJson, contains('Console A'));
+      expect(exportedJson, contains('Node 1'));
+
+      final freshRepo = PacketRepository(
+        storageService: ProtocolLibraryService(storageDirectory: tempDir2),
+      );
+      final counts = freshRepo.importLibraryBundle(exportedJson);
+      expect(counts['protocols'], equals(1));
+      expect(counts['sources'], equals(1));
+      expect(counts['destinations'], equals(1));
+      expect(freshRepo.customRules.any((p) => p.name == 'ArtNet Broadcast'), isTrue);
+      expect(freshRepo.sources.any((s) => s.name == 'Console A'), isTrue);
+      expect(freshRepo.destinations.any((d) => d.name == 'Node 1'), isTrue);
+
+      repo.dispose();
+      freshRepo.dispose();
+      try {
+        tempDir1.deleteSync(recursive: true);
+        tempDir2.deleteSync(recursive: true);
+      } catch (_) {}
     });
   });
 }
