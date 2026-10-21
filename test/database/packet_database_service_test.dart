@@ -258,7 +258,7 @@ void main() {
       );
 
       final csv = CsvExportService.exportPacketsToCsv([packet]);
-      expect(csv, contains('Packet No,Time (s),Global Delta (ms)'));
+      expect(csv, contains('Packet No,Time (s),Global Delta (s)'));
       expect(csv, contains('192.168.1.10,8.8.8.8,DNS'));
     });
   });

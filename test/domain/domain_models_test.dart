@@ -32,6 +32,10 @@ void main() {
       );
 
       expect(packet.timestampSeconds, closeTo(1.5, 0.0001));
+      expect(packet.globalDeltaSeconds, closeTo(0.0012, 0.00001));
+      expect(packet.streamDeltaSeconds, closeTo(0.0034, 0.00001));
+      expect(packet.formattedGlobalDeltaSeconds, equals('0.001200s'));
+      expect(packet.formattedStreamDeltaSeconds, equals('0.003400s'));
       expect(packet.globalDeltaMs, closeTo(1.2, 0.0001));
       expect(packet.streamDeltaMs, closeTo(3.4, 0.0001));
       expect(packet.formattedDateTime, isNotEmpty);

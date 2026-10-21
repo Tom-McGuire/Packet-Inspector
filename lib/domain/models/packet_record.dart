@@ -81,8 +81,15 @@ class PacketRecord {
   final Map<String, dynamic> customFields;
 
   double get timestampSeconds => timestampUs / 1000000.0;
+  double get globalDeltaSeconds => globalDeltaUs / 1000000.0;
+  double get streamDeltaSeconds => streamDeltaUs / 1000000.0;
   double get globalDeltaMs => globalDeltaUs / 1000.0;
   double get streamDeltaMs => streamDeltaUs / 1000.0;
+
+  String get formattedGlobalDeltaSeconds =>
+      '${(globalDeltaUs / 1000000.0).toStringAsFixed(6)}s';
+  String get formattedStreamDeltaSeconds =>
+      '${(streamDeltaUs / 1000000.0).toStringAsFixed(6)}s';
 
   DateTime get dateTime => DateTime.fromMicrosecondsSinceEpoch(timestampUs);
 

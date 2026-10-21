@@ -13,8 +13,8 @@ import '../../protocol_library/views/add_endpoint_dialog.dart';
 enum PacketTableColumn {
   no('No.', 'packet_no', 65.0, 45.0),
   time('Date & Time', 'timestamp_us', 180.0, 110.0),
-  globalDelta('Global Δt', 'global_delta_us', 95.0, 60.0),
-  streamDelta('Stream Δt', 'stream_delta_us', 95.0, 60.0),
+  globalDelta('Global Δt', 'global_delta_us', 105.0, 65.0),
+  streamDelta('Stream Δt', 'stream_delta_us', 105.0, 65.0),
   source('Source', 'src_ip', 150.0, 80.0),
   destination('Destination', 'dst_ip', 150.0, 80.0),
   protocol('Protocol', 'detected_protocol', 100.0, 60.0),
@@ -408,14 +408,14 @@ class _PacketTableViewState extends State<PacketTableView> {
               width: widths[PacketTableColumn.globalDelta],
               child: _buildDeltaBadge(
                 context,
-                packet.globalDeltaMs,
+                packet.globalDeltaUs,
               ),
             ),
             SizedBox(
               width: widths[PacketTableColumn.streamDelta],
               child: _buildDeltaBadge(
                 context,
-                packet.streamDeltaMs,
+                packet.streamDeltaUs,
               ),
             ),
             SizedBox(
@@ -460,10 +460,11 @@ class _PacketTableViewState extends State<PacketTableView> {
     );
   }
 
-  Widget _buildDeltaBadge(BuildContext context, double ms) {
+  Widget _buildDeltaBadge(BuildContext context, int deltaUs) {
+    final seconds = deltaUs / 1000000.0;
     return Text(
-      '${ms.toStringAsFixed(3)}ms',
-      style: const TextStyle(fontSize: 11),
+      '${seconds.toStringAsFixed(6)}s',
+      style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
     );
   }
 

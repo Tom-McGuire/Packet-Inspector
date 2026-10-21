@@ -8,8 +8,8 @@ class CsvExportService {
       [
         'Packet No',
         'Time (s)',
-        'Global Delta (ms)',
-        'Stream Delta (ms)',
+        'Global Delta (s)',
+        'Stream Delta (s)',
         'Source IP',
         'Dest IP',
         'Protocol',
@@ -23,8 +23,8 @@ class CsvExportService {
       ...packets.map((p) => [
             p.packetNo,
             p.timestampSeconds.toStringAsFixed(6),
-            p.globalDeltaMs.toStringAsFixed(3),
-            p.streamDeltaMs.toStringAsFixed(3),
+            p.globalDeltaSeconds.toStringAsFixed(6),
+            p.streamDeltaSeconds.toStringAsFixed(6),
             p.srcIp,
             p.dstIp,
             p.detectedProtocol,
