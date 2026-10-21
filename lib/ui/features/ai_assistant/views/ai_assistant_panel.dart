@@ -12,7 +12,9 @@ import '../../../../data/services/ai/llm_provider_service.dart';
 import '../../../../data/services/export/csv_export_service.dart';
 
 class AiAssistantPanel extends StatefulWidget {
-  const AiAssistantPanel({super.key});
+  const AiAssistantPanel({super.key, this.llmService});
+
+  final LlmProviderService? llmService;
 
   @override
   State<AiAssistantPanel> createState() => _AiAssistantPanelState();
@@ -32,18 +34,18 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
   void initState() {
     super.initState();
     final vm = context.read<InspectorViewModel>();
-    _llmService = LlmProviderService(
-      tools: PacketAiTools(repository: vm.repository),
-    );
+    _llmService = widget.llmService ?? vm.llmService;
     _inputCtrl.addListener(_onInputChanged);
 
-    // Add welcome message with /p, /s, /r guidance
-    _llmService.history.add(ChatMessage(
-      role: 'assistant',
-      text: '👋 Welcome to **Packet Inspector AI**!\n\n'
-          'I can summarize your capture, hunt for timing spikes, chart top talkers, or generate specific reports on your custom library.\n\n'
-          '💡 **Filter Mentions**: Type `/p` for protocols, `/s` for sources, or `/d` for destinations (or use the chips below) to reference specific items!',
-    ));
+    // Add welcome message with /p, /s, /r guidance only once
+    if (_llmService.history.isEmpty) {
+      _llmService.history.add(ChatMessage(
+        role: 'assistant',
+        text: '👋 Welcome to **Packet Inspector AI**!\n\n'
+            'I can summarize your capture, hunt for timing spikes, chart top talkers, or generate specific reports on your custom library.\n\n'
+            '💡 **Filter Mentions**: Type `/p` for protocols, `/s` for sources, or `/d` for destinations (or use the chips below) to reference specific items!',
+      ));
+    }
   }
 
   @override
@@ -186,6 +188,7 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
                   onSelected: (mode) {
                     setState(() {
                       _llmService.backendMode = mode;
+                      _llmService.saveSettings();
                     });
                     if (mode != LlmBackendMode.deterministicLocal) {
                       _showBackendConfigDialog(context);
@@ -638,6 +641,7 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
                   labelText: 'Gemini API Key',
                   border: OutlineInputBorder(),
                   isDense: true,
+                  helperText: '🔒 Encrypted at rest (machine-bound)',
                 ),
               ),
               const SizedBox(height: 8),
@@ -689,8 +693,15 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
                     : 'gemini-3.8-flash';
                 _llmService.ollamaUrl = ollamaUrlCtrl.text.trim();
                 _llmService.ollamaModel = ollamaModelCtrl.text.trim();
+                _llmService.saveSettings();
               });
               Navigator.of(ctx).pop();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('AI settings and encrypted key saved.'),
+                  duration: Duration(seconds: 2),
+                ),
+              );
             },
             child: const Text('Save'),
           ),

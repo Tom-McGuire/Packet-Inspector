@@ -8,15 +8,35 @@ import '../../../../domain/models/baseline_profile.dart';
 import '../../../../domain/models/timeline_bucket.dart';
 import '../../../../data/repositories/packet_repository.dart';
 import '../../../../data/services/export/csv_export_service.dart';
+import '../../../../data/services/storage/ai_settings_storage_service.dart';
+import '../../../../data/services/ai/llm_provider_service.dart';
+import '../../../../data/services/ai/packet_ai_tools.dart';
 
 class InspectorViewModel extends ChangeNotifier {
-  InspectorViewModel({PacketRepository? repository})
-      : _repository = repository ?? PacketRepository() {
+  InspectorViewModel({
+    PacketRepository? repository,
+    AiSettingsStorageService? aiSettingsStorage,
+    LlmProviderService? llmService,
+  })  : _repository = repository ?? PacketRepository(),
+        _aiSettingsStorage = aiSettingsStorage ??
+            AiSettingsStorageService(
+              storageDirectory: repository?.storageService.storageDirectory,
+            ) {
+    _llmService = llmService ??
+        LlmProviderService(
+          tools: PacketAiTools(repository: _repository),
+          storageService: _aiSettingsStorage,
+        );
     _refreshState();
   }
 
   final PacketRepository _repository;
+  final AiSettingsStorageService _aiSettingsStorage;
+  late final LlmProviderService _llmService;
+
   PacketRepository get repository => _repository;
+  AiSettingsStorageService get aiSettingsStorage => _aiSettingsStorage;
+  LlmProviderService get llmService => _llmService;
 
   bool _isTriageMode = true;
   bool _silenceLanChatter = true;

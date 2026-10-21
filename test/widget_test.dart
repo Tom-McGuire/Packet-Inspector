@@ -22,5 +22,30 @@ void main() {
     // Verify demo capture is loaded and table shows packets
     expect(find.text('demo_capture.pcap'), findsOneWidget);
     expect(find.textContaining('DNS Standard query'), findsWidgets);
+
+    // Verify Capture button is present in AppBar
+    expect(find.text('Capture'), findsOneWidget);
+    await tester.tap(find.text('Capture'));
+    await tester.pumpAndSettle();
+
+    // Verify Capture dialog opens
+    expect(find.text('TShark Packet Capture'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (w) => w is Text && (w.data == 'Storage Destination' || w.data == 'Wireshark / TShark not detected'),
+      ),
+      findsOneWidget,
+    );
+
+    // Close the dialog
+    final closeBtn = find.text('Close');
+    final cancelBtn = find.text('Cancel');
+    if (closeBtn.evaluate().isNotEmpty) {
+      await tester.tap(closeBtn);
+    } else {
+      await tester.tap(cancelBtn);
+    }
+    await tester.pumpAndSettle();
+    expect(find.text('TShark Packet Capture'), findsNothing);
   });
 }

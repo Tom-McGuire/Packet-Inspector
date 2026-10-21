@@ -1,45 +1,157 @@
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:ui' show AppExitResponse;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import '../view_models/inspector_view_model.dart';
+import '../../capture/view_models/capture_view_model.dart';
+import '../../capture/views/capture_dialog.dart';
+import '../../../../domain/models/capture_config.dart';
 import 'dual_mode_filter_bar.dart';
 import 'timeline_spike_scrubber.dart';
 import 'packet_table_view.dart';
 import 'hex_byte_inspector.dart';
 import '../../protocol_library/views/custom_library_dialog.dart';
 
-class InspectorScreen extends StatelessWidget {
+class InspectorScreen extends StatefulWidget {
   const InspectorScreen({super.key, this.aiPanelSlot});
 
   final Widget? aiPanelSlot;
 
   @override
+  State<InspectorScreen> createState() => _InspectorScreenState();
+}
+
+class _InspectorScreenState extends State<InspectorScreen> with WidgetsBindingObserver {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Future<AppExitResponse> didRequestAppExit() async {
+    final captureVm = Provider.of<CaptureViewModel?>(context, listen: false);
+    if (captureVm == null || !captureVm.isCapturing) {
+      return AppExitResponse.exit;
+    }
+
+    final mode = captureVm.activeSession?.mode ?? CaptureMode.quick;
+
+    if (mode == CaptureMode.quick) {
+      final shouldExit = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent),
+              SizedBox(width: 8),
+              Text('Capture In Progress'),
+            ],
+          ),
+          content: const Text(
+            'A Quick Capture is currently active.\n\n'
+            'Closing Packet Inspector will stop and finalize this capture file.\n\n'
+            'Do you want to stop the capture and exit?',
+          ),
+          actions: [
+            OutlinedButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Cancel (Keep App Open)'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Stop Capture & Exit'),
+            ),
+          ],
+        ),
+      );
+
+      if (shouldExit == true) {
+        await captureVm.stopCapture();
+        return AppExitResponse.exit;
+      } else {
+        return AppExitResponse.cancel;
+      }
+    } else {
+      final action = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (ctx) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.hourglass_top_rounded, color: Colors.blueAccent),
+              SizedBox(width: 8),
+              Text('Background Capture Active'),
+            ],
+          ),
+          content: const Text(
+            'A Timed or Ring Buffer capture is currently running.\n\n'
+            'You can let TShark continue capturing in the background after closing this window, '
+            'or stop the capture now.',
+          ),
+          actions: [
+            OutlinedButton(
+              onPressed: () => Navigator.of(ctx).pop('cancel'),
+              child: const Text('Cancel'),
+            ),
+            OutlinedButton(
+              onPressed: () => Navigator.of(ctx).pop('stop'),
+              child: const Text('Stop Capture & Exit'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop('detach'),
+              child: const Text('Leave Running in Background'),
+            ),
+          ],
+        ),
+      );
+
+      if (action == 'stop') {
+        await captureVm.stopCapture();
+        return AppExitResponse.exit;
+      } else if (action == 'detach') {
+        return AppExitResponse.exit;
+      } else {
+        return AppExitResponse.cancel;
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final vm = context.watch<InspectorViewModel>();
+    final captureVm = Provider.of<CaptureViewModel?>(context);
 
     return Scaffold(
       appBar: AppBar(
         centerTitle: false,
         titleSpacing: 16,
-        title: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.radar, color: Colors.indigoAccent),
-            const SizedBox(width: 8),
-            const Flexible(
-              child: Text(
+        title: FittedBox(
+          fit: BoxFit.scaleDown,
+          alignment: Alignment.centerLeft,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.radar, color: Colors.indigoAccent),
+              const SizedBox(width: 8),
+              const Text(
                 'Packet Inspector',
                 style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-                overflow: TextOverflow.ellipsis,
               ),
-            ),
-            if (vm.loadedFileName != null) ...[
-              const SizedBox(width: 8),
-              Flexible(
-                child: Container(
+              if (vm.loadedFileName != null) ...[
+                const SizedBox(width: 8),
+                Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
@@ -50,21 +162,24 @@ class InspectorScreen extends StatelessWidget {
                     children: [
                       const Icon(Icons.insert_drive_file_outlined, size: 14),
                       const SizedBox(width: 4),
-                      Flexible(
-                        child: Text(
-                          vm.loadedFileName!,
-                          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                          overflow: TextOverflow.ellipsis,
-                        ),
+                      Text(
+                        vm.loadedFileName!,
+                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
                       ),
                     ],
                   ),
                 ),
-              ),
+              ],
             ],
-          ],
+          ),
         ),
         actions: [
+          // TShark Capture Button
+          if (captureVm != null) ...[
+            _buildCaptureButton(context, captureVm),
+            const SizedBox(width: 8),
+          ],
+
           // Open PCAP / PCAPNG Button
           FilledButton.tonalIcon(
             icon: const Icon(Icons.folder_open, size: 16),
@@ -189,14 +304,51 @@ class InspectorScreen extends StatelessWidget {
           ),
 
           // AI Assistant Panel
-          if (vm.isAiPanelOpen && aiPanelSlot != null) ...[
+          if (vm.isAiPanelOpen && widget.aiPanelSlot != null) ...[
             const VerticalDivider(width: 1),
             SizedBox(
               width: 380,
-              child: aiPanelSlot!,
+              child: widget.aiPanelSlot!,
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildCaptureButton(BuildContext context, CaptureViewModel? captureVm) {
+    if (captureVm == null) {
+      return const SizedBox.shrink();
+    }
+    if (captureVm.isCapturing) {
+      return FilledButton.icon(
+        style: FilledButton.styleFrom(
+          backgroundColor: Colors.red.shade900,
+          foregroundColor: Colors.white,
+          side: const BorderSide(color: Colors.redAccent, width: 1.5),
+        ),
+        icon: const Icon(Icons.fiber_manual_record, color: Colors.redAccent, size: 16),
+        label: Text(
+          'Capturing (${captureVm.formatDuration(captureVm.elapsed)})',
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+        ),
+        onPressed: () => showDialog(
+          context: context,
+          builder: (_) => const CaptureDialog(),
+        ),
+      );
+    }
+
+    return OutlinedButton.icon(
+      icon: Icon(
+        Icons.sensors,
+        size: 16,
+        color: captureVm.hasTShark ? Colors.indigoAccent : Colors.grey,
+      ),
+      label: const Text('Capture'),
+      onPressed: () => showDialog(
+        context: context,
+        builder: (_) => const CaptureDialog(),
       ),
     );
   }

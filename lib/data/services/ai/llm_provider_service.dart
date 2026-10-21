@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'packet_ai_tools.dart';
 import 'ai_filter_references.dart';
+import '../storage/ai_settings_storage_service.dart';
 
 enum LlmBackendMode {
   deterministicLocal,
@@ -24,14 +25,20 @@ class ChatMessage {
 class LlmProviderService {
   LlmProviderService({
     required this.tools,
+    this.storageService,
     this.backendMode = LlmBackendMode.deterministicLocal,
     this.geminiApiKey = '',
     this.geminiModel = 'gemini-3.8-flash',
     this.ollamaUrl = 'http://localhost:11434',
     this.ollamaModel = 'gemma2:9b',
-  });
+  }) {
+    if (storageService != null) {
+      loadSettings();
+    }
+  }
 
   final PacketAiTools tools;
+  final AiSettingsStorageService? storageService;
   LlmBackendMode backendMode;
   String geminiApiKey;
   String geminiModel;
@@ -39,6 +46,27 @@ class LlmProviderService {
   String ollamaModel;
 
   final List<ChatMessage> history = [];
+
+  void loadSettings() {
+    if (storageService == null) return;
+    final s = storageService!.loadSettings();
+    backendMode = s.backendMode;
+    geminiApiKey = s.geminiApiKey;
+    geminiModel = s.geminiModel.isNotEmpty ? s.geminiModel : 'gemini-3.8-flash';
+    ollamaUrl = s.ollamaUrl;
+    ollamaModel = s.ollamaModel;
+  }
+
+  void saveSettings() {
+    if (storageService == null) return;
+    storageService!.saveSettings(AiSettings(
+      backendMode: backendMode,
+      geminiApiKey: geminiApiKey,
+      geminiModel: geminiModel.isNotEmpty ? geminiModel : 'gemini-3.8-flash',
+      ollamaUrl: ollamaUrl,
+      ollamaModel: ollamaModel,
+    ));
+  }
 
   Future<ChatMessage> sendMessage(String userMessage) async {
     history.add(ChatMessage(role: 'user', text: userMessage));
@@ -122,8 +150,9 @@ class LlmProviderService {
       enrichedPrompt = '$prompt\n\n[Context from Packet Inspector Library]:\n${refs.buildLibraryContextSummary()}';
     }
 
+    final modelName = geminiModel.isNotEmpty ? geminiModel : 'gemini-3.8-flash';
     final url = Uri.parse(
-      'https://generativelanguage.googleapis.com/v1beta/models/$geminiModel:generateContent?key=$geminiApiKey',
+      'https://generativelanguage.googleapis.com/v1beta/models/$modelName:generateContent?key=$geminiApiKey',
     );
 
     final payload = {

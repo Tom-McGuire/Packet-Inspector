@@ -11,6 +11,8 @@ import 'package:packet_inspector/data/services/ai/packet_ai_tools.dart';
 import 'package:packet_inspector/data/services/ai/ai_filter_references.dart';
 import 'package:packet_inspector/ui/features/inspector/view_models/inspector_view_model.dart';
 import 'package:packet_inspector/ui/features/ai_assistant/views/ai_assistant_panel.dart';
+import 'package:packet_inspector/data/services/storage/ai_settings_storage_service.dart';
+import 'package:packet_inspector/data/services/ai/llm_provider_service.dart';
 
 void main() {
   group('PacketAiTools Unit Tests', () {
@@ -289,6 +291,71 @@ void main() {
       // Verify ViewModel now has this filter active
       expect(vm.isTriageMode, isFalse);
       expect(vm.selectedProtocolPills.contains('sACN AI Test'), isTrue);
+    });
+
+    test('AiSettingsStorageService encrypts API key at rest and reloads exact key targeting gemini-3.8-flash', () {
+      final storage = AiSettingsStorageService(storageDirectory: tempWidgetDir);
+      final rawKey = 'AIzaSyA_test_secret_gemini_key_1234567890';
+
+      storage.saveSettings(AiSettings(
+        backendMode: LlmBackendMode.geminiCloud,
+        geminiApiKey: rawKey,
+        geminiModel: 'gemini-3.8-flash',
+        ollamaUrl: 'http://localhost:11434',
+        ollamaModel: 'gemma2:9b',
+      ));
+
+      // Verify file exists on disk
+      final file = File('${tempWidgetDir.path}/ai_settings.json');
+      expect(file.existsSync(), isTrue);
+
+      // Verify the plaintext API key is NOT stored in the file (it must be encrypted)
+      final rawContent = file.readAsStringSync();
+      expect(rawContent.contains(rawKey), isFalse, reason: 'Plaintext API key must never be written to disk!');
+      expect(rawContent.contains('gemini_api_key_enc'), isTrue);
+      expect(rawContent.contains('gemini-3.8-flash'), isTrue);
+
+      // Reload settings and verify exact plaintext key is recovered
+      final reloaded = storage.loadSettings();
+      expect(reloaded.backendMode, equals(LlmBackendMode.geminiCloud));
+      expect(reloaded.geminiApiKey, equals(rawKey));
+      expect(reloaded.geminiModel, equals('gemini-3.8-flash'));
+    });
+
+    test('LlmProviderService auto-hydrates from storage and retains history in InspectorViewModel', () {
+      final storage = AiSettingsStorageService(storageDirectory: tempWidgetDir);
+      storage.saveSettings(const AiSettings(
+        backendMode: LlmBackendMode.geminiCloud,
+        geminiApiKey: 'saved_key_xyz',
+        geminiModel: 'gemini-3.8-flash',
+      ));
+
+      final repo = PacketRepository(
+        storageService: ProtocolLibraryService(storageDirectory: tempWidgetDir),
+      );
+      final vm = InspectorViewModel(
+        repository: repo,
+        aiSettingsStorage: storage,
+      );
+
+      // Verify ViewModel LLM service is initialized with saved credentials targeting gemini-3.8-flash
+      expect(vm.llmService.backendMode, equals(LlmBackendMode.geminiCloud));
+      expect(vm.llmService.geminiApiKey, equals('saved_key_xyz'));
+      expect(vm.llmService.geminiModel, equals('gemini-3.8-flash'));
+
+      // Add message to chat history
+      vm.llmService.history.add(ChatMessage(role: 'user', text: 'Hello packet AI'));
+      expect(vm.llmService.history.length, equals(1));
+
+      // Toggle AI panel closed and open
+      vm.setAiPanelOpen(false);
+      expect(vm.isAiPanelOpen, isFalse);
+      vm.setAiPanelOpen(true);
+      expect(vm.isAiPanelOpen, isTrue);
+
+      // Verify chat history and API key are preserved
+      expect(vm.llmService.history.length, equals(1));
+      expect(vm.llmService.geminiApiKey, equals('saved_key_xyz'));
     });
   });
 }
