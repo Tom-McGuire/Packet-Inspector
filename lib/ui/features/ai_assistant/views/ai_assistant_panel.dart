@@ -616,6 +616,7 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
 
   void _showBackendConfigDialog(BuildContext context) {
     final apiKeyCtrl = TextEditingController(text: _llmService.geminiApiKey);
+    final geminiModelCtrl = TextEditingController(text: _llmService.geminiModel);
     final ollamaUrlCtrl = TextEditingController(text: _llmService.ollamaUrl);
     final ollamaModelCtrl = TextEditingController(text: _llmService.ollamaModel);
 
@@ -635,6 +636,16 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
                 obscureText: true,
                 decoration: const InputDecoration(
                   labelText: 'Gemini API Key',
+                  border: OutlineInputBorder(),
+                  isDense: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: geminiModelCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Gemini Model',
+                  hintText: 'gemini-3.8-flash',
                   border: OutlineInputBorder(),
                   isDense: true,
                 ),
@@ -673,6 +684,9 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
             onPressed: () {
               setState(() {
                 _llmService.geminiApiKey = apiKeyCtrl.text.trim();
+                _llmService.geminiModel = geminiModelCtrl.text.trim().isNotEmpty
+                    ? geminiModelCtrl.text.trim()
+                    : 'gemini-3.8-flash';
                 _llmService.ollamaUrl = ollamaUrlCtrl.text.trim();
                 _llmService.ollamaModel = ollamaModelCtrl.text.trim();
               });

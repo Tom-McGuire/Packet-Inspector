@@ -26,7 +26,7 @@ class LlmProviderService {
     required this.tools,
     this.backendMode = LlmBackendMode.deterministicLocal,
     this.geminiApiKey = '',
-    this.geminiModel = 'gemini-2.5-flash',
+    this.geminiModel = 'gemini-3.8-flash',
     this.ollamaUrl = 'http://localhost:11434',
     this.ollamaModel = 'gemma2:9b',
   });
