@@ -647,7 +647,7 @@ class _PacketTableViewState extends State<PacketTableView> {
             children: [
               const Icon(Icons.arrow_upward, size: 16, color: Colors.blueAccent),
               const SizedBox(width: 8),
-              Expanded(child: Text('Save Source (${packet.srcIp}) to Sender Library...')),
+              Expanded(child: Text('Save Source (${packet.srcIp}) to Source Library...')),
             ],
           ),
         ),
@@ -672,7 +672,7 @@ class _PacketTableViewState extends State<PacketTableView> {
               children: [
                 const Icon(Icons.arrow_downward, size: 16, color: Colors.greenAccent),
                 const SizedBox(width: 8),
-                Expanded(child: Text('Save Dest (${packet.dstIp}) to Receiver Library...')),
+                Expanded(child: Text('Save Destination (${packet.dstIp}) to Destination Library...')),
               ],
             ),
           ),

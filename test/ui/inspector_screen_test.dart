@@ -144,6 +144,10 @@ void main() {
     await tester.tap(dnsCell, buttons: 2); // secondary click on DNS cell
     await tester.pumpAndSettle();
 
+    expect(find.textContaining('Save Source ('), findsOneWidget);
+    expect(find.textContaining('to Source Library...'), findsOneWidget);
+    expect(find.textContaining('Save Destination ('), findsOneWidget);
+    expect(find.textContaining('to Destination Library...'), findsOneWidget);
     expect(find.textContaining('Mark Source IP'), findsOneWidget);
     expect(find.textContaining('Flag Source IP'), findsOneWidget);
     expect(find.textContaining('Reset Source IP'), findsOneWidget);

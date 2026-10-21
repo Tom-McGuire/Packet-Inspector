@@ -210,23 +210,23 @@ class AiFilterReferences {
     }
 
     if (matchedSenders.isNotEmpty) {
-      sb.writeln('Sender Library Specifications:');
+      sb.writeln('Source Library Specifications:');
       for (final s in matchedSenders) {
-        sb.writeln('• Sender "${s.name}": IP ${s.ipAddress}${s.port != null ? ' : Port ${s.port}' : ''}');
+        sb.writeln('• Source "${s.name}": IP ${s.ipAddress}${s.port != null ? ' : Port ${s.port}' : ''}');
       }
     }
     if (unmatchedSenderIps.isNotEmpty) {
-      sb.writeln('Referenced Sender IPs: ${unmatchedSenderIps.join(", ")}');
+      sb.writeln('Referenced Source IPs: ${unmatchedSenderIps.join(", ")}');
     }
 
     if (matchedReceivers.isNotEmpty) {
-      sb.writeln('Receiver Library Specifications:');
+      sb.writeln('Destination Library Specifications:');
       for (final r in matchedReceivers) {
-        sb.writeln('• Receiver "${r.name}": IP ${r.ipAddress}${r.port != null ? ' : Port ${r.port}' : ''}');
+        sb.writeln('• Destination "${r.name}": IP ${r.ipAddress}${r.port != null ? ' : Port ${r.port}' : ''}');
       }
     }
     if (unmatchedReceiverIps.isNotEmpty) {
-      sb.writeln('Referenced Receiver IPs: ${unmatchedReceiverIps.join(", ")}');
+      sb.writeln('Referenced Destination IPs: ${unmatchedReceiverIps.join(", ")}');
     }
 
     return sb.toString().trim();
