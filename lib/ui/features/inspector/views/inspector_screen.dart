@@ -1,14 +1,10 @@
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'dart:ui' show AppExitResponse;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
 import '../view_models/inspector_view_model.dart';
-import '../../capture/view_models/capture_view_model.dart';
-import '../../capture/views/capture_dialog.dart';
-import '../../../../domain/models/capture_config.dart';
 import 'dual_mode_filter_bar.dart';
 import 'timeline_spike_scrubber.dart';
 import 'packet_table_view.dart';
@@ -16,7 +12,7 @@ import 'hex_byte_inspector.dart';
 import '../../protocol_library/views/custom_library_dialog.dart';
 import '../../../../core/config/feature_flags.dart';
 
-class InspectorScreen extends StatefulWidget {
+class InspectorScreen extends StatelessWidget {
   const InspectorScreen({
     super.key,
     this.aiPanelSlot,
@@ -27,117 +23,8 @@ class InspectorScreen extends StatefulWidget {
   final bool showAiAssistant;
 
   @override
-  State<InspectorScreen> createState() => _InspectorScreenState();
-}
-
-class _InspectorScreenState extends State<InspectorScreen> with WidgetsBindingObserver {
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addObserver(this);
-  }
-
-  @override
-  void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
-    super.dispose();
-  }
-
-  @override
-  Future<AppExitResponse> didRequestAppExit() async {
-    final captureVm = Provider.of<CaptureViewModel?>(context, listen: false);
-    if (captureVm == null || !captureVm.isCapturing) {
-      return AppExitResponse.exit;
-    }
-
-    final mode = captureVm.activeSession?.mode ?? CaptureMode.quick;
-
-    if (mode == CaptureMode.quick) {
-      final shouldExit = await showDialog<bool>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.warning_amber_rounded, color: Colors.orangeAccent),
-              SizedBox(width: 8),
-              Text('Capture In Progress'),
-            ],
-          ),
-          content: const Text(
-            'A Quick Capture is currently active.\n\n'
-            'Closing Packet Inspector will stop and finalize this capture file.\n\n'
-            'Do you want to stop the capture and exit?',
-          ),
-          actions: [
-            OutlinedButton(
-              onPressed: () => Navigator.of(ctx).pop(false),
-              child: const Text('Cancel (Keep App Open)'),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
-              onPressed: () => Navigator.of(ctx).pop(true),
-              child: const Text('Stop Capture & Exit'),
-            ),
-          ],
-        ),
-      );
-
-      if (shouldExit == true) {
-        await captureVm.stopCapture();
-        return AppExitResponse.exit;
-      } else {
-        return AppExitResponse.cancel;
-      }
-    } else {
-      final action = await showDialog<String>(
-        context: context,
-        barrierDismissible: false,
-        builder: (ctx) => AlertDialog(
-          title: const Row(
-            children: [
-              Icon(Icons.hourglass_top_rounded, color: Colors.blueAccent),
-              SizedBox(width: 8),
-              Text('Background Capture Active'),
-            ],
-          ),
-          content: const Text(
-            'A Timed or Ring Buffer capture is currently running.\n\n'
-            'You can let TShark continue capturing in the background after closing this window, '
-            'or stop the capture now.',
-          ),
-          actions: [
-            OutlinedButton(
-              onPressed: () => Navigator.of(ctx).pop('cancel'),
-              child: const Text('Cancel'),
-            ),
-            OutlinedButton(
-              onPressed: () => Navigator.of(ctx).pop('stop'),
-              child: const Text('Stop Capture & Exit'),
-            ),
-            FilledButton(
-              onPressed: () => Navigator.of(ctx).pop('detach'),
-              child: const Text('Leave Running in Background'),
-            ),
-          ],
-        ),
-      );
-
-      if (action == 'stop') {
-        await captureVm.stopCapture();
-        return AppExitResponse.exit;
-      } else if (action == 'detach') {
-        return AppExitResponse.exit;
-      } else {
-        return AppExitResponse.cancel;
-      }
-    }
-  }
-
-  @override
   Widget build(BuildContext context) {
     final vm = context.watch<InspectorViewModel>();
-    final captureVm = Provider.of<CaptureViewModel?>(context);
 
     return Scaffold(
       appBar: AppBar(
@@ -180,12 +67,6 @@ class _InspectorScreenState extends State<InspectorScreen> with WidgetsBindingOb
           ),
         ),
         actions: [
-          // TShark Capture Button
-          if (captureVm != null) ...[
-            _buildCaptureButton(context, captureVm),
-            const SizedBox(width: 8),
-          ],
-
           // Open PCAP / PCAPNG Button
           FilledButton.tonalIcon(
             icon: const Icon(Icons.folder_open, size: 16),
@@ -262,7 +143,7 @@ class _InspectorScreenState extends State<InspectorScreen> with WidgetsBindingOb
           const SizedBox(width: 8),
 
           // AI Assistant Drawer Toggle (controlled by build flag / showAiAssistant)
-          if (widget.showAiAssistant && widget.aiPanelSlot != null) ...[
+          if (showAiAssistant && aiPanelSlot != null) ...[
             FilledButton.icon(
               style: FilledButton.styleFrom(
                 backgroundColor: vm.isAiPanelOpen ? Colors.purple : null,
@@ -313,51 +194,14 @@ class _InspectorScreenState extends State<InspectorScreen> with WidgetsBindingOb
           ),
 
           // AI Assistant Panel
-          if (widget.showAiAssistant && vm.isAiPanelOpen && widget.aiPanelSlot != null) ...[
+          if (showAiAssistant && vm.isAiPanelOpen && aiPanelSlot != null) ...[
             const VerticalDivider(width: 1),
             SizedBox(
               width: 380,
-              child: widget.aiPanelSlot!,
+              child: aiPanelSlot!,
             ),
           ],
         ],
-      ),
-    );
-  }
-
-  Widget _buildCaptureButton(BuildContext context, CaptureViewModel? captureVm) {
-    if (captureVm == null) {
-      return const SizedBox.shrink();
-    }
-    if (captureVm.isCapturing) {
-      return FilledButton.icon(
-        style: FilledButton.styleFrom(
-          backgroundColor: Colors.red.shade900,
-          foregroundColor: Colors.white,
-          side: const BorderSide(color: Colors.redAccent, width: 1.5),
-        ),
-        icon: const Icon(Icons.fiber_manual_record, color: Colors.redAccent, size: 16),
-        label: Text(
-          'Capturing (${captureVm.formatDuration(captureVm.elapsed)})',
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-        ),
-        onPressed: () => showDialog(
-          context: context,
-          builder: (_) => const CaptureDialog(),
-        ),
-      );
-    }
-
-    return OutlinedButton.icon(
-      icon: Icon(
-        Icons.sensors,
-        size: 16,
-        color: captureVm.hasTShark ? Colors.indigoAccent : Colors.grey,
-      ),
-      label: const Text('Capture'),
-      onPressed: () => showDialog(
-        context: context,
-        builder: (_) => const CaptureDialog(),
       ),
     );
   }
