@@ -14,11 +14,17 @@ import 'timeline_spike_scrubber.dart';
 import 'packet_table_view.dart';
 import 'hex_byte_inspector.dart';
 import '../../protocol_library/views/custom_library_dialog.dart';
+import '../../../../core/config/feature_flags.dart';
 
 class InspectorScreen extends StatefulWidget {
-  const InspectorScreen({super.key, this.aiPanelSlot});
+  const InspectorScreen({
+    super.key,
+    this.aiPanelSlot,
+    bool? showAiAssistant,
+  }) : showAiAssistant = showAiAssistant ?? (aiPanelSlot != null && FeatureFlags.enableAiAssistant);
 
   final Widget? aiPanelSlot;
+  final bool showAiAssistant;
 
   @override
   State<InspectorScreen> createState() => _InspectorScreenState();
@@ -255,16 +261,19 @@ class _InspectorScreenState extends State<InspectorScreen> with WidgetsBindingOb
           ),
           const SizedBox(width: 8),
 
-          // AI Assistant Drawer Toggle
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: vm.isAiPanelOpen ? Colors.purple : null,
+          // AI Assistant Drawer Toggle (controlled by build flag / showAiAssistant)
+          if (widget.showAiAssistant && widget.aiPanelSlot != null) ...[
+            FilledButton.icon(
+              style: FilledButton.styleFrom(
+                backgroundColor: vm.isAiPanelOpen ? Colors.purple : null,
+              ),
+              icon: const Icon(Icons.auto_awesome, size: 16),
+              label: const Text('AI Assistant'),
+              onPressed: () => vm.toggleAiPanel(),
             ),
-            icon: const Icon(Icons.auto_awesome, size: 16),
-            label: const Text('AI Assistant'),
-            onPressed: () => vm.toggleAiPanel(),
-          ),
-          const SizedBox(width: 16),
+            const SizedBox(width: 8),
+          ],
+          const SizedBox(width: 8),
         ],
       ),
       body: Row(
@@ -304,7 +313,7 @@ class _InspectorScreenState extends State<InspectorScreen> with WidgetsBindingOb
           ),
 
           // AI Assistant Panel
-          if (vm.isAiPanelOpen && widget.aiPanelSlot != null) ...[
+          if (widget.showAiAssistant && vm.isAiPanelOpen && widget.aiPanelSlot != null) ...[
             const VerticalDivider(width: 1),
             SizedBox(
               width: 380,

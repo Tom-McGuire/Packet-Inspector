@@ -5,6 +5,7 @@ import 'ui/features/inspector/view_models/inspector_view_model.dart';
 import 'ui/features/capture/view_models/capture_view_model.dart';
 import 'ui/features/inspector/views/inspector_screen.dart';
 import 'ui/features/ai_assistant/views/ai_assistant_panel.dart';
+import 'core/config/feature_flags.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,7 +42,7 @@ class PacketInspectorApp extends StatelessWidget {
           scaffoldBackgroundColor: const Color(0xFF121418),
         ),
         home: const InspectorScreen(
-          aiPanelSlot: AiAssistantPanel(),
+          aiPanelSlot: FeatureFlags.enableAiAssistant ? AiAssistantPanel() : null,
         ),
       ),
     );

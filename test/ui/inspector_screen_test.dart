@@ -29,7 +29,10 @@ void main() {
           ChangeNotifierProvider<InspectorViewModel>.value(value: vm),
         ],
         child: const MaterialApp(
-          home: InspectorScreen(),
+          home: InspectorScreen(
+            showAiAssistant: true,
+            aiPanelSlot: SizedBox(),
+          ),
         ),
       ),
     );
@@ -63,6 +66,39 @@ void main() {
     // Verify HexByteInspector shows selected packet
     expect(find.textContaining('Packet #'), findsOneWidget);
     expect(find.text('L4 Payload'), findsOneWidget);
+  });
+
+  testWidgets('InspectorScreen hides AI Assistant button and drawer when showAiAssistant is false', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final repo = PacketRepository();
+    repo.loadDemoCapture();
+    final vm = InspectorViewModel(repository: repo);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<InspectorViewModel>.value(value: vm),
+        ],
+        child: const MaterialApp(
+          home: InspectorScreen(
+            showAiAssistant: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify Title and other Toolbar buttons exist
+    expect(find.text('Packet Inspector'), findsOneWidget);
+    expect(find.text('Open PCAP'), findsOneWidget);
+    expect(find.text('Load Demo'), findsOneWidget);
+
+    // Verify AI Assistant button is completely hidden
+    expect(find.text('AI Assistant'), findsNothing);
+    expect(find.byIcon(Icons.auto_awesome), findsNothing);
   });
 
   testWidgets('AddProtocolDialog opens and configures Tier 1 and Tier 2 rules', (tester) async {
@@ -107,7 +143,10 @@ void main() {
           ChangeNotifierProvider<InspectorViewModel>.value(value: vm),
         ],
         child: const MaterialApp(
-          home: InspectorScreen(),
+          home: InspectorScreen(
+            showAiAssistant: true,
+            aiPanelSlot: SizedBox(),
+          ),
         ),
       ),
     );
@@ -200,7 +239,10 @@ void main() {
           ChangeNotifierProvider<InspectorViewModel>.value(value: vm),
         ],
         child: const MaterialApp(
-          home: InspectorScreen(),
+          home: InspectorScreen(
+            showAiAssistant: true,
+            aiPanelSlot: SizedBox(),
+          ),
         ),
       ),
     );
@@ -254,7 +296,10 @@ void main() {
           ChangeNotifierProvider<InspectorViewModel>.value(value: vm),
         ],
         child: const MaterialApp(
-          home: InspectorScreen(),
+          home: InspectorScreen(
+            showAiAssistant: true,
+            aiPanelSlot: SizedBox(),
+          ),
         ),
       ),
     );
@@ -334,7 +379,10 @@ void main() {
           ChangeNotifierProvider<InspectorViewModel>.value(value: vm),
         ],
         child: const MaterialApp(
-          home: InspectorScreen(),
+          home: InspectorScreen(
+            showAiAssistant: true,
+            aiPanelSlot: SizedBox(),
+          ),
         ),
       ),
     );
@@ -386,7 +434,10 @@ void main() {
           ChangeNotifierProvider<InspectorViewModel>.value(value: vm),
         ],
         child: const MaterialApp(
-          home: InspectorScreen(),
+          home: InspectorScreen(
+            showAiAssistant: true,
+            aiPanelSlot: SizedBox(),
+          ),
         ),
       ),
     );
