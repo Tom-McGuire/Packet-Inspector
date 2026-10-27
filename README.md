@@ -119,6 +119,15 @@ flutter analyze
 
 ---
 
+### Note on Windows / macOS Security Prompts
+
+These tools are free and independent projects and are not yet code-signed with expensive commercial certificates:
+
+- **Windows:** If SmartScreen appears, click **"More info"** &rarr; **"Run anyway"**.
+- **macOS:** Right-click the `.app` file, select **Open**, and confirm the prompt (or run `xattr -c PacketInspector.app` in Terminal).
+
+---
+
 ## License
 
 MIT License.
