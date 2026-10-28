@@ -176,56 +176,57 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
           onChanged: onNotChanged,
         ),
         const SizedBox(width: 6),
-        SizedBox(
+        Container(
           width: 175,
           height: 32,
-          child: TextField(
-            controller: controller,
-            onChanged: onChanged,
-            style: const TextStyle(fontSize: 12),
-            decoration: InputDecoration(
-              isDense: true,
-              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 7),
-              hintText: label,
-              hintStyle: TextStyle(
-                fontSize: 12,
-                color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
-              ),
-              prefixIcon: Icon(icon, size: 14, color: iconColor),
-              prefixIconConstraints: const BoxConstraints(minWidth: 26, minHeight: 26),
-              suffixIcon: controller.text.isNotEmpty
-                  ? IconButton(
-                      icon: const Icon(Icons.clear, size: 14),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(minWidth: 22, minHeight: 22),
-                      onPressed: () {
-                        controller.clear();
-                        onChanged('');
-                      },
-                    )
-                  : null,
-              filled: true,
-              fillColor: theme.colorScheme.surface,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(color: theme.colorScheme.outlineVariant),
-              ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(
-                  color: isNot
-                      ? Colors.redAccent.withValues(alpha: 0.6)
-                      : theme.colorScheme.outlineVariant,
-                ),
-              ),
-              focusedBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(8),
-                borderSide: BorderSide(
-                  color: isNot ? Colors.redAccent : theme.colorScheme.primary,
-                  width: 1.5,
-                ),
-              ),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          decoration: BoxDecoration(
+            color: theme.colorScheme.surface,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: isNot
+                  ? Colors.redAccent.withValues(alpha: 0.8)
+                  : theme.colorScheme.outlineVariant,
+              width: isNot ? 1.5 : 1.0,
             ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(icon, size: 14, color: iconColor),
+              const SizedBox(width: 6),
+              Expanded(
+                child: TextField(
+                  controller: controller,
+                  onChanged: onChanged,
+                  textAlignVertical: TextAlignVertical.center,
+                  style: const TextStyle(fontSize: 12),
+                  decoration: InputDecoration(
+                    isDense: true,
+                    contentPadding: EdgeInsets.zero,
+                    hintText: label,
+                    hintStyle: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant.withValues(alpha: 0.6),
+                    ),
+                    border: InputBorder.none,
+                    enabledBorder: InputBorder.none,
+                    focusedBorder: InputBorder.none,
+                  ),
+                ),
+              ),
+              if (controller.text.isNotEmpty)
+                IconButton(
+                  icon: const Icon(Icons.clear, size: 14),
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 20, minHeight: 20),
+                  splashRadius: 12,
+                  onPressed: () {
+                    controller.clear();
+                    onChanged('');
+                  },
+                ),
+            ],
           ),
         ),
       ],
