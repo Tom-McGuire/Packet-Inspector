@@ -256,7 +256,7 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
 
     return ListView.separated(
       itemCount: rules.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final rule = rules[index];
         final hasMagic = rule.magicBytesHex != null && rule.magicBytesHex!.isNotEmpty;
@@ -461,7 +461,7 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
 
     return ListView.separated(
       itemCount: senders.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final sender = senders[index];
 
@@ -628,7 +628,7 @@ class _CustomLibraryDialogState extends State<CustomLibraryDialog>
 
     return ListView.separated(
       itemCount: receivers.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      separatorBuilder: (_, _) => const SizedBox(height: 8),
       itemBuilder: (context, index) {
         final receiver = receivers[index];
 

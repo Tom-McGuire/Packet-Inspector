@@ -12,7 +12,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Packet Inspector'), findsOneWidget);
-    expect(find.text('Baseline Triage'), findsOneWidget);
+    expect(find.text('Source IP'), findsOneWidget);
+    expect(find.text('Destination IP'), findsOneWidget);
     expect(find.text('No Capture File Loaded'), findsOneWidget);
 
     // Verify main analysis toolbar buttons

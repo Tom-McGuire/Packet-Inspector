@@ -49,9 +49,14 @@ class _AddEndpointDialogState extends State<AddEndpointDialog> {
       _selectedColorHex = rule.colorHex;
     } else {
       final ip = widget.prefillIp ?? '';
-      _nameCtrl = TextEditingController(text: ip.isNotEmpty ? '$defaultName $ip' : defaultName);
+      final port = widget.prefillPort;
+      String initialName = defaultName;
+      if (ip.isNotEmpty) {
+        initialName = port != null ? '$ip:$port' : ip;
+      }
+      _nameCtrl = TextEditingController(text: initialName);
       _ipCtrl = TextEditingController(text: ip);
-      _portCtrl = TextEditingController(text: widget.prefillPort?.toString() ?? '');
+      _portCtrl = TextEditingController(text: port?.toString() ?? '');
       _selectedColorHex = widget.type == EndpointType.sender ? 0xFF2196F3 : 0xFF4CAF50;
     }
   }

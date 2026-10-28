@@ -23,10 +23,11 @@ class EndpointRule {
   final bool isVisible;
 
   String get displayName {
-    if (port != null) {
-      return '$name ($ipAddress:$port)';
+    final addr = port != null ? '$ipAddress:$port' : ipAddress;
+    if (name == addr) {
+      return name;
     }
-    return '$name ($ipAddress)';
+    return '$name ($addr)';
   }
 
   /// Unique key for filtering: "ip:port" or "ip"

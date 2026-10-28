@@ -286,8 +286,9 @@ class PacketDatabaseService {
     List<dynamic> params,
     Set<String> filters,
     String ipCol,
-    String portCol,
-  ) {
+    String portCol, {
+    bool isNot = false,
+  }) {
     if (filters.isEmpty) return;
     final subClauses = <String>[];
     for (final f in filters) {
@@ -306,8 +307,163 @@ class PacketDatabaseService {
       params.add(f);
     }
     if (subClauses.isNotEmpty) {
-      whereClauses.add('(${subClauses.join(' OR ')})');
+      final joined = subClauses.join(' OR ');
+      if (isNot) {
+        whereClauses.add('NOT ($joined)');
+      } else {
+        whereClauses.add('($joined)');
+      }
     }
+  }
+
+  (String, List<dynamic>) _buildWhereClauseAndParams({
+    bool isTriageMode = true,
+    Set<TriageStatus> triageStatuses = const {
+      TriageStatus.expected,
+      TriageStatus.unclassified,
+      TriageStatus.unexpected,
+    },
+    bool isTriageNot = false,
+    bool silenceLanChatter = true,
+    String sourceSearch = '',
+    bool isSourceSearchNot = false,
+    String destSearch = '',
+    bool isDestSearchNot = false,
+    Set<String> protocolPills = const {},
+    bool isProtocolNot = false,
+    Set<String> senderFilters = const {},
+    bool isSenderNot = false,
+    Set<String> receiverFilters = const {},
+    bool isReceiverNot = false,
+    Set<String> ipFilters = const {},
+    int? timeStartUs,
+    int? timeEndUs,
+  }) {
+    final whereClauses = <String>[];
+    final params = <dynamic>[];
+
+    // 1. Triage Statuses
+    if (triageStatuses.isNotEmpty) {
+      if (!isTriageNot && triageStatuses.length >= 3) {
+        // all 3 statuses selected positive -> match all, no restriction
+      } else {
+        final statusNames = triageStatuses.map((s) => "'${s.name}'").join(',');
+        if (isTriageNot) {
+          whereClauses.add('triage_status NOT IN ($statusNames)');
+        } else {
+          whereClauses.add('triage_status IN ($statusNames)');
+        }
+      }
+    }
+
+    // 2. Silence LAN Chatter
+    if (silenceLanChatter) {
+      whereClauses.add('is_lan_noise = 0');
+    }
+
+    // 3. Source IP Search Box
+    final trimmedSrc = sourceSearch.trim();
+    if (trimmedSrc.isNotEmpty) {
+      if (trimmedSrc.contains(':')) {
+        final parts = trimmedSrc.split(':');
+        final ipPart = parts[0];
+        final portPart = int.tryParse(parts[1]);
+        if (portPart != null) {
+          if (isSourceSearchNot) {
+            whereClauses.add('NOT (src_ip LIKE ? AND src_port = ?)');
+          } else {
+            whereClauses.add('(src_ip LIKE ? AND src_port = ?)');
+          }
+          params.add('%$ipPart%');
+          params.add(portPart);
+        } else {
+          if (isSourceSearchNot) {
+            whereClauses.add('src_ip NOT LIKE ?');
+          } else {
+            whereClauses.add('src_ip LIKE ?');
+          }
+          params.add('%$trimmedSrc%');
+        }
+      } else {
+        if (isSourceSearchNot) {
+          whereClauses.add('src_ip NOT LIKE ?');
+        } else {
+          whereClauses.add('src_ip LIKE ?');
+        }
+        params.add('%$trimmedSrc%');
+      }
+    }
+
+    // 4. Destination IP Search Box
+    final trimmedDst = destSearch.trim();
+    if (trimmedDst.isNotEmpty) {
+      if (trimmedDst.contains(':')) {
+        final parts = trimmedDst.split(':');
+        final ipPart = parts[0];
+        final portPart = int.tryParse(parts[1]);
+        if (portPart != null) {
+          if (isDestSearchNot) {
+            whereClauses.add('NOT (dst_ip LIKE ? AND dst_port = ?)');
+          } else {
+            whereClauses.add('(dst_ip LIKE ? AND dst_port = ?)');
+          }
+          params.add('%$ipPart%');
+          params.add(portPart);
+        } else {
+          if (isDestSearchNot) {
+            whereClauses.add('dst_ip NOT LIKE ?');
+          } else {
+            whereClauses.add('dst_ip LIKE ?');
+          }
+          params.add('%$trimmedDst%');
+        }
+      } else {
+        if (isDestSearchNot) {
+          whereClauses.add('dst_ip NOT LIKE ?');
+        } else {
+          whereClauses.add('dst_ip LIKE ?');
+        }
+        params.add('%$trimmedDst%');
+      }
+    }
+
+    // 5. Protocol Pills
+    if (protocolPills.isNotEmpty) {
+      final placeholders = List.filled(protocolPills.length, '?').join(',');
+      if (isProtocolNot) {
+        whereClauses.add('detected_protocol NOT IN ($placeholders)');
+      } else {
+        whereClauses.add('detected_protocol IN ($placeholders)');
+      }
+      params.addAll(protocolPills);
+    }
+
+    // 6. Sender Filters (Sources)
+    _appendEndpointFilter(whereClauses, params, senderFilters, 'src_ip', 'src_port', isNot: isSenderNot);
+
+    // 7. Receiver Filters (Destinations)
+    _appendEndpointFilter(whereClauses, params, receiverFilters, 'dst_ip', 'dst_port', isNot: isReceiverNot);
+
+    // 8. IP Filters (generic)
+    if (ipFilters.isNotEmpty) {
+      final ipPlaceholders = List.filled(ipFilters.length, '?').join(',');
+      whereClauses.add('(src_ip IN ($ipPlaceholders) OR dst_ip IN ($ipPlaceholders))');
+      params.addAll(ipFilters);
+      params.addAll(ipFilters);
+    }
+
+    // 9. Time Window
+    if (timeStartUs != null) {
+      whereClauses.add('timestamp_us >= ?');
+      params.add(timeStartUs);
+    }
+    if (timeEndUs != null) {
+      whereClauses.add('timestamp_us <= ?');
+      params.add(timeEndUs);
+    }
+
+    final whereSql = whereClauses.isNotEmpty ? 'WHERE ${whereClauses.join(' AND ')}' : '';
+    return (whereSql, params);
   }
 
   List<PacketRecord> queryPackets({
@@ -319,52 +475,43 @@ class PacketDatabaseService {
       TriageStatus.unclassified,
       TriageStatus.unexpected,
     },
+    bool isTriageNot = false,
     bool silenceLanChatter = true,
+    String sourceSearch = '',
+    bool isSourceSearchNot = false,
+    String destSearch = '',
+    bool isDestSearchNot = false,
     Set<String> protocolPills = const {},
+    bool isProtocolNot = false,
     Set<String> senderFilters = const {},
+    bool isSenderNot = false,
     Set<String> receiverFilters = const {},
+    bool isReceiverNot = false,
     Set<String> ipFilters = const {},
     int? timeStartUs,
     int? timeEndUs,
     String sortColumn = 'packet_no',
     bool sortAscending = true,
   }) {
-    final whereClauses = <String>[];
-    final params = <dynamic>[];
-
-    if (isTriageMode) {
-      if (triageStatuses.length < 3) {
-        final statusNames = triageStatuses.map((s) => "'${s.name}'").join(',');
-        whereClauses.add('triage_status IN ($statusNames)');
-      }
-      if (silenceLanChatter) {
-        whereClauses.add('is_lan_noise = 0');
-      }
-    } else {
-      // Quick-filter pill mode
-      if (protocolPills.isNotEmpty) {
-        final placeholders = List.filled(protocolPills.length, '?').join(',');
-        whereClauses.add('detected_protocol IN ($placeholders)');
-        params.addAll(protocolPills);
-      }
-      _appendEndpointFilter(whereClauses, params, senderFilters, 'src_ip', 'src_port');
-      _appendEndpointFilter(whereClauses, params, receiverFilters, 'dst_ip', 'dst_port');
-      if (ipFilters.isNotEmpty) {
-        final ipPlaceholders = List.filled(ipFilters.length, '?').join(',');
-        whereClauses.add('(src_ip IN ($ipPlaceholders) OR dst_ip IN ($ipPlaceholders))');
-        params.addAll(ipFilters);
-        params.addAll(ipFilters);
-      }
-    }
-
-    if (timeStartUs != null) {
-      whereClauses.add('timestamp_us >= ?');
-      params.add(timeStartUs);
-    }
-    if (timeEndUs != null) {
-      whereClauses.add('timestamp_us <= ?');
-      params.add(timeEndUs);
-    }
+    final (whereSql, params) = _buildWhereClauseAndParams(
+      isTriageMode: isTriageMode,
+      triageStatuses: triageStatuses,
+      isTriageNot: isTriageNot,
+      silenceLanChatter: silenceLanChatter,
+      sourceSearch: sourceSearch,
+      isSourceSearchNot: isSourceSearchNot,
+      destSearch: destSearch,
+      isDestSearchNot: isDestSearchNot,
+      protocolPills: protocolPills,
+      isProtocolNot: isProtocolNot,
+      senderFilters: senderFilters,
+      isSenderNot: isSenderNot,
+      receiverFilters: receiverFilters,
+      isReceiverNot: isReceiverNot,
+      ipFilters: ipFilters,
+      timeStartUs: timeStartUs,
+      timeEndUs: timeEndUs,
+    );
 
     final validColumns = {
       'packet_no': 'packet_no',
@@ -384,7 +531,6 @@ class PacketDatabaseService {
         ? 'ORDER BY packet_no $orderDir'
         : 'ORDER BY $orderCol $orderDir, packet_no ASC';
 
-    final whereSql = whereClauses.isNotEmpty ? 'WHERE ${whereClauses.join(' AND ')}' : '';
     final sql = '''
       SELECT * FROM packets
       $whereSql
@@ -411,51 +557,42 @@ class PacketDatabaseService {
       TriageStatus.unclassified,
       TriageStatus.unexpected,
     },
+    bool isTriageNot = false,
     bool silenceLanChatter = true,
+    String sourceSearch = '',
+    bool isSourceSearchNot = false,
+    String destSearch = '',
+    bool isDestSearchNot = false,
     Set<String> protocolPills = const {},
+    bool isProtocolNot = false,
     Set<String> senderFilters = const {},
+    bool isSenderNot = false,
     Set<String> receiverFilters = const {},
+    bool isReceiverNot = false,
     Set<String> ipFilters = const {},
     int? timeStartUs,
     int? timeEndUs,
   }) {
-    final whereClauses = <String>[];
-    final params = <dynamic>[];
+    final (whereSql, params) = _buildWhereClauseAndParams(
+      isTriageMode: isTriageMode,
+      triageStatuses: triageStatuses,
+      isTriageNot: isTriageNot,
+      silenceLanChatter: silenceLanChatter,
+      sourceSearch: sourceSearch,
+      isSourceSearchNot: isSourceSearchNot,
+      destSearch: destSearch,
+      isDestSearchNot: isDestSearchNot,
+      protocolPills: protocolPills,
+      isProtocolNot: isProtocolNot,
+      senderFilters: senderFilters,
+      isSenderNot: isSenderNot,
+      receiverFilters: receiverFilters,
+      isReceiverNot: isReceiverNot,
+      ipFilters: ipFilters,
+      timeStartUs: timeStartUs,
+      timeEndUs: timeEndUs,
+    );
 
-    if (isTriageMode) {
-      if (triageStatuses.length < 3) {
-        final statusNames = triageStatuses.map((s) => "'${s.name}'").join(',');
-        whereClauses.add('triage_status IN ($statusNames)');
-      }
-      if (silenceLanChatter) {
-        whereClauses.add('is_lan_noise = 0');
-      }
-    } else {
-      if (protocolPills.isNotEmpty) {
-        final placeholders = List.filled(protocolPills.length, '?').join(',');
-        whereClauses.add('detected_protocol IN ($placeholders)');
-        params.addAll(protocolPills);
-      }
-      _appendEndpointFilter(whereClauses, params, senderFilters, 'src_ip', 'src_port');
-      _appendEndpointFilter(whereClauses, params, receiverFilters, 'dst_ip', 'dst_port');
-      if (ipFilters.isNotEmpty) {
-        final ipPlaceholders = List.filled(ipFilters.length, '?').join(',');
-        whereClauses.add('(src_ip IN ($ipPlaceholders) OR dst_ip IN ($ipPlaceholders))');
-        params.addAll(ipFilters);
-        params.addAll(ipFilters);
-      }
-    }
-
-    if (timeStartUs != null) {
-      whereClauses.add('timestamp_us >= ?');
-      params.add(timeStartUs);
-    }
-    if (timeEndUs != null) {
-      whereClauses.add('timestamp_us <= ?');
-      params.add(timeEndUs);
-    }
-
-    final whereSql = whereClauses.isNotEmpty ? 'WHERE ${whereClauses.join(' AND ')}' : '';
     final sql = 'SELECT COUNT(*) as cnt FROM packets $whereSql';
     final result = _db.select(sql, params);
     return result.first['cnt'] as int;
@@ -472,13 +609,55 @@ class PacketDatabaseService {
     }).toList();
   }
 
-  Map<String, int> queryProtocolCounts() {
-    final rows = _db.select('''
+  Map<String, int> queryProtocolCounts({
+    bool isTriageMode = true,
+    Set<TriageStatus> triageStatuses = const {
+      TriageStatus.expected,
+      TriageStatus.unclassified,
+      TriageStatus.unexpected,
+    },
+    bool isTriageNot = false,
+    bool silenceLanChatter = false,
+    String sourceSearch = '',
+    bool isSourceSearchNot = false,
+    String destSearch = '',
+    bool isDestSearchNot = false,
+    Set<String> senderFilters = const {},
+    bool isSenderNot = false,
+    Set<String> receiverFilters = const {},
+    bool isReceiverNot = false,
+    Set<String> ipFilters = const {},
+    int? timeStartUs,
+    int? timeEndUs,
+  }) {
+    final (whereSql, params) = _buildWhereClauseAndParams(
+      isTriageMode: isTriageMode,
+      triageStatuses: triageStatuses,
+      isTriageNot: isTriageNot,
+      silenceLanChatter: silenceLanChatter,
+      sourceSearch: sourceSearch,
+      isSourceSearchNot: isSourceSearchNot,
+      destSearch: destSearch,
+      isDestSearchNot: isDestSearchNot,
+      protocolPills: const {},
+      isProtocolNot: false,
+      senderFilters: senderFilters,
+      isSenderNot: isSenderNot,
+      receiverFilters: receiverFilters,
+      isReceiverNot: isReceiverNot,
+      ipFilters: ipFilters,
+      timeStartUs: timeStartUs,
+      timeEndUs: timeEndUs,
+    );
+
+    final sql = '''
       SELECT detected_protocol, COUNT(*) as cnt
       FROM packets
+      $whereSql
       GROUP BY detected_protocol
       ORDER BY cnt DESC
-    ''');
+    ''';
+    final rows = _db.select(sql, params);
     final counts = <String, int>{};
     for (final r in rows) {
       counts[r['detected_protocol'] as String] = r['cnt'] as int;
@@ -486,14 +665,55 @@ class PacketDatabaseService {
     return counts;
   }
 
-  Map<String, int> queryTopSenders({int limit = 15}) {
-    final rows = _db.select('''
+  Map<String, int> queryTopSenders({
+    int limit = 15,
+    bool isTriageMode = true,
+    Set<TriageStatus> triageStatuses = const {
+      TriageStatus.expected,
+      TriageStatus.unclassified,
+      TriageStatus.unexpected,
+    },
+    bool isTriageNot = false,
+    bool silenceLanChatter = false,
+    String destSearch = '',
+    bool isDestSearchNot = false,
+    Set<String> protocolPills = const {},
+    bool isProtocolNot = false,
+    Set<String> receiverFilters = const {},
+    bool isReceiverNot = false,
+    Set<String> ipFilters = const {},
+    int? timeStartUs,
+    int? timeEndUs,
+  }) {
+    final (whereSql, params) = _buildWhereClauseAndParams(
+      isTriageMode: isTriageMode,
+      triageStatuses: triageStatuses,
+      isTriageNot: isTriageNot,
+      silenceLanChatter: silenceLanChatter,
+      sourceSearch: '',
+      isSourceSearchNot: false,
+      destSearch: destSearch,
+      isDestSearchNot: isDestSearchNot,
+      protocolPills: protocolPills,
+      isProtocolNot: isProtocolNot,
+      senderFilters: const {},
+      isSenderNot: false,
+      receiverFilters: receiverFilters,
+      isReceiverNot: isReceiverNot,
+      ipFilters: ipFilters,
+      timeStartUs: timeStartUs,
+      timeEndUs: timeEndUs,
+    );
+
+    final sql = '''
       SELECT src_ip, COUNT(*) as cnt
       FROM packets
+      $whereSql
       GROUP BY src_ip
       ORDER BY cnt DESC
       LIMIT $limit
-    ''');
+    ''';
+    final rows = _db.select(sql, params);
     final counts = <String, int>{};
     for (final r in rows) {
       counts[r['src_ip'] as String] = r['cnt'] as int;
@@ -501,14 +721,55 @@ class PacketDatabaseService {
     return counts;
   }
 
-  Map<String, int> queryTopReceivers({int limit = 15}) {
-    final rows = _db.select('''
+  Map<String, int> queryTopReceivers({
+    int limit = 15,
+    bool isTriageMode = true,
+    Set<TriageStatus> triageStatuses = const {
+      TriageStatus.expected,
+      TriageStatus.unclassified,
+      TriageStatus.unexpected,
+    },
+    bool isTriageNot = false,
+    bool silenceLanChatter = false,
+    String sourceSearch = '',
+    bool isSourceSearchNot = false,
+    Set<String> protocolPills = const {},
+    bool isProtocolNot = false,
+    Set<String> senderFilters = const {},
+    bool isSenderNot = false,
+    Set<String> ipFilters = const {},
+    int? timeStartUs,
+    int? timeEndUs,
+  }) {
+    final (whereSql, params) = _buildWhereClauseAndParams(
+      isTriageMode: isTriageMode,
+      triageStatuses: triageStatuses,
+      isTriageNot: isTriageNot,
+      silenceLanChatter: silenceLanChatter,
+      sourceSearch: sourceSearch,
+      isSourceSearchNot: isSourceSearchNot,
+      destSearch: '',
+      isDestSearchNot: false,
+      protocolPills: protocolPills,
+      isProtocolNot: isProtocolNot,
+      senderFilters: senderFilters,
+      isSenderNot: isSenderNot,
+      receiverFilters: const {},
+      isReceiverNot: false,
+      ipFilters: ipFilters,
+      timeStartUs: timeStartUs,
+      timeEndUs: timeEndUs,
+    );
+
+    final sql = '''
       SELECT dst_ip, COUNT(*) as cnt
       FROM packets
+      $whereSql
       GROUP BY dst_ip
       ORDER BY cnt DESC
       LIMIT $limit
-    ''');
+    ''';
+    final rows = _db.select(sql, params);
     final counts = <String, int>{};
     for (final r in rows) {
       counts[r['dst_ip'] as String] = r['cnt'] as int;
@@ -520,22 +781,57 @@ class PacketDatabaseService {
     required String ip,
     int? port,
     required bool isSender,
+    bool isTriageMode = true,
+    Set<TriageStatus> triageStatuses = const {
+      TriageStatus.expected,
+      TriageStatus.unclassified,
+      TriageStatus.unexpected,
+    },
+    bool isTriageNot = false,
+    bool silenceLanChatter = false,
+    String sourceSearch = '',
+    bool isSourceSearchNot = false,
+    String destSearch = '',
+    bool isDestSearchNot = false,
+    Set<String> protocolPills = const {},
+    bool isProtocolNot = false,
+    Set<String> senderFilters = const {},
+    bool isSenderNot = false,
+    Set<String> receiverFilters = const {},
+    bool isReceiverNot = false,
+    Set<String> ipFilters = const {},
+    int? timeStartUs,
+    int? timeEndUs,
   }) {
+    final (whereSql, params) = _buildWhereClauseAndParams(
+      isTriageMode: isTriageMode,
+      triageStatuses: triageStatuses,
+      isTriageNot: isTriageNot,
+      silenceLanChatter: silenceLanChatter,
+      sourceSearch: isSender ? '' : sourceSearch,
+      isSourceSearchNot: isSender ? false : isSourceSearchNot,
+      destSearch: isSender ? destSearch : '',
+      isDestSearchNot: isSender ? isDestSearchNot : false,
+      protocolPills: protocolPills,
+      isProtocolNot: isProtocolNot,
+      senderFilters: isSender ? const {} : senderFilters,
+      isSenderNot: isSender ? false : isSenderNot,
+      receiverFilters: isSender ? receiverFilters : const {},
+      isReceiverNot: isSender ? isReceiverNot : false,
+      ipFilters: ipFilters,
+      timeStartUs: timeStartUs,
+      timeEndUs: timeEndUs,
+    );
+
     final ipCol = isSender ? 'src_ip' : 'dst_ip';
     final portCol = isSender ? 'src_port' : 'dst_port';
-    if (port != null) {
-      final rows = _db.select(
-        'SELECT COUNT(*) as cnt FROM packets WHERE $ipCol = ? AND $portCol = ?',
-        [ip, port],
-      );
-      return (rows.firstOrNull?['cnt'] as int?) ?? 0;
-    } else {
-      final rows = _db.select(
-        'SELECT COUNT(*) as cnt FROM packets WHERE $ipCol = ?',
-        [ip],
-      );
-      return (rows.firstOrNull?['cnt'] as int?) ?? 0;
-    }
+    final endpointClause = port != null ? '$ipCol = ? AND $portCol = ?' : '$ipCol = ?';
+    final fullWhere = whereSql.isNotEmpty ? '$whereSql AND ($endpointClause)' : 'WHERE $endpointClause';
+    params.add(ip);
+    if (port != null) params.add(port);
+
+    final rows = _db.select('SELECT COUNT(*) as cnt FROM packets $fullWhere', params);
+    return (rows.firstOrNull?['cnt'] as int?) ?? 0;
   }
 
   Map<int, double> queryPortBandwidth({int limit = 10}) {
@@ -580,20 +876,53 @@ class PacketDatabaseService {
     return (totalBytes * 8.0) / durationSec;
   }
 
-  Map<TriageStatus, int> queryTriageCounts({bool silenceLanChatter = false}) {
-    final sql = silenceLanChatter
-        ? '''
-          SELECT triage_status, COUNT(*) as cnt
-          FROM packets
-          WHERE is_lan_noise = 0
-          GROUP BY triage_status
-        '''
-        : '''
-          SELECT triage_status, COUNT(*) as cnt
-          FROM packets
-          GROUP BY triage_status
-        ''';
-    final rows = _db.select(sql);
+  Map<TriageStatus, int> queryTriageCounts({
+    bool silenceLanChatter = false,
+    String sourceSearch = '',
+    bool isSourceSearchNot = false,
+    String destSearch = '',
+    bool isDestSearchNot = false,
+    Set<String> protocolPills = const {},
+    bool isProtocolNot = false,
+    Set<String> senderFilters = const {},
+    bool isSenderNot = false,
+    Set<String> receiverFilters = const {},
+    bool isReceiverNot = false,
+    Set<String> ipFilters = const {},
+    int? timeStartUs,
+    int? timeEndUs,
+  }) {
+    final (whereSql, params) = _buildWhereClauseAndParams(
+      isTriageMode: true,
+      triageStatuses: const {
+        TriageStatus.expected,
+        TriageStatus.unclassified,
+        TriageStatus.unexpected,
+      },
+      isTriageNot: false,
+      silenceLanChatter: silenceLanChatter,
+      sourceSearch: sourceSearch,
+      isSourceSearchNot: isSourceSearchNot,
+      destSearch: destSearch,
+      isDestSearchNot: isDestSearchNot,
+      protocolPills: protocolPills,
+      isProtocolNot: isProtocolNot,
+      senderFilters: senderFilters,
+      isSenderNot: isSenderNot,
+      receiverFilters: receiverFilters,
+      isReceiverNot: isReceiverNot,
+      ipFilters: ipFilters,
+      timeStartUs: timeStartUs,
+      timeEndUs: timeEndUs,
+    );
+
+    final sql = '''
+      SELECT triage_status, COUNT(*) as cnt
+      FROM packets
+      $whereSql
+      GROUP BY triage_status
+    ''';
+    final rows = _db.select(sql, params);
     final counts = <TriageStatus, int>{
       TriageStatus.expected: 0,
       TriageStatus.unclassified: 0,

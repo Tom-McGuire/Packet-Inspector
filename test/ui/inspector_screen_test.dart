@@ -6,8 +6,8 @@ import 'package:packet_inspector/data/repositories/packet_repository.dart';
 import 'package:packet_inspector/data/services/storage/protocol_library_service.dart';
 import 'package:packet_inspector/ui/features/inspector/view_models/inspector_view_model.dart';
 import 'package:packet_inspector/ui/features/inspector/views/inspector_screen.dart';
-import 'package:packet_inspector/ui/features/protocol_library/views/custom_library_dialog.dart';
 import 'package:packet_inspector/ui/features/protocol_library/views/add_protocol_dialog.dart';
+import 'package:packet_inspector/ui/features/protocol_library/views/add_endpoint_dialog.dart';
 import 'package:packet_inspector/domain/models/custom_protocol_rule.dart';
 import 'package:packet_inspector/domain/models/endpoint_rule.dart';
 import 'package:packet_inspector/domain/models/packet_record.dart';
@@ -45,17 +45,21 @@ void main() {
     expect(find.text('Load Demo'), findsOneWidget);
     expect(find.text('AI Assistant'), findsOneWidget);
 
-    // Verify Baseline Triage mode chips
-    expect(find.text('Baseline Triage'), findsOneWidget);
+    // Verify Search boxes are at top of filter bar
+    expect(find.text('Source IP'), findsOneWidget);
+    expect(find.text('Destination IP'), findsOneWidget);
+
+    // Verify Combined Baseline Triage chips and Silence LAN Chatter
+    expect(find.text('Triage'), findsWidgets);
     expect(find.text('Silence LAN Chatter'), findsOneWidget);
     expect(find.textContaining('Expected'), findsWidgets);
+    expect(find.textContaining('Unassigned'), findsWidgets);
+    expect(find.textContaining('Unexpected'), findsWidgets);
 
-    // Toggle Triage Mode -> Quick-Filter Pills
-    final modeSwitch = find.byType(Switch).first;
-    await tester.tap(modeSwitch);
-    await tester.pumpAndSettle();
-
-    expect(find.text('Quick-Filter Pills'), findsOneWidget);
+    // Verify Protocols, Sources, and Destinations rows are combined
+    expect(find.text('Protocols'), findsOneWidget);
+    expect(find.text('Sources'), findsOneWidget);
+    expect(find.text('Destinations'), findsOneWidget);
     expect(find.textContaining('DNS ('), findsWidgets);
 
     // Tap on a packet row to select it
@@ -338,6 +342,7 @@ void main() {
     // Verify Clear All Filters clears both
     final clearBtn = find.text('Clear All Filters');
     expect(clearBtn, findsOneWidget);
+    await tester.ensureVisible(clearBtn);
     await tester.tap(clearBtn);
     await tester.pumpAndSettle();
 
@@ -392,8 +397,8 @@ void main() {
     expect(find.text('Auto-Detected'), findsOneWidget);
     expect(find.byWidgetPredicate((w) => w is FilterChip && w.label is Text && ((w.label as Text).data?.startsWith('DNS (') ?? false)), findsOneWidget);
 
-    // Toggle Auto-Detected switch OFF
-    final autoDetectedSwitch = find.byType(Switch).at(1);
+    // Toggle Auto-Detected switch OFF (first switch on the top bar)
+    final autoDetectedSwitch = find.byType(Switch).first;
     await tester.tap(autoDetectedSwitch);
     await tester.pumpAndSettle();
 
@@ -478,5 +483,142 @@ void main() {
 
     // Verify Visible Protocol is now hidden from the main screen filter bar
     expect(find.textContaining('Visible Protocol'), findsNothing);
+  });
+
+  testWidgets('Unified Filter Bar supports Source/Dest IP search, AND/NOT toggles, and collapsed state', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    final repo = PacketRepository();
+    repo.loadDemoCapture();
+    final vm = InspectorViewModel(repository: repo);
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          ChangeNotifierProvider<InspectorViewModel>.value(value: vm),
+        ],
+        child: const MaterialApp(
+          home: InspectorScreen(
+            showAiAssistant: false,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 1. Verify Top search boxes and AND/NOT toggles
+    expect(find.text('Source IP'), findsOneWidget);
+    expect(find.text('Destination IP'), findsOneWidget);
+    expect(find.text('AND'), findsWidgets);
+    expect(find.text('NOT'), findsWidgets);
+
+    // 2. Type in Source IP search box
+    final srcField = find.widgetWithText(TextField, 'Source IP');
+    await tester.enterText(srcField, '192.168.1.50');
+    await tester.pumpAndSettle();
+    expect(vm.sourceSearch, equals('192.168.1.50'));
+
+    for (final p in vm.packets) {
+      expect(p.srcIp.contains('192.168.1.50'), isTrue);
+    }
+
+    // 3. Toggle Destination search to NOT
+    // Find NOT toggles: index 1 is Destination IP toggle
+    final notButtons = find.text('NOT');
+    await tester.tap(notButtons.at(1));
+    await tester.pumpAndSettle();
+    expect(vm.isDestSearchNot, isTrue);
+
+    // Enter destination to exclude
+    final dstField = find.widgetWithText(TextField, 'Destination IP');
+    await tester.enterText(dstField, '192.168.1.1');
+    await tester.pumpAndSettle();
+    expect(vm.destSearch, equals('192.168.1.1'));
+
+    for (final p in vm.packets) {
+      expect(p.srcIp.contains('192.168.1.50'), isTrue);
+      expect(p.dstIp.contains('192.168.1.1'), isFalse);
+    }
+
+    // 4. Test Collapse behavior:
+    // Click collapse button
+    final collapseBtn = find.byIcon(Icons.unfold_less);
+    expect(collapseBtn, findsOneWidget);
+    await tester.tap(collapseBtn);
+    await tester.pumpAndSettle();
+
+    // Search boxes remain visible when collapsed!
+    expect(find.text('Source IP'), findsOneWidget);
+    expect(find.text('Destination IP'), findsOneWidget);
+
+    // Detailed filter rows are hidden when collapsed
+    expect(find.text('Triage'), findsNothing);
+    expect(find.text('Protocols'), findsNothing);
+    expect(find.text('Sources'), findsNothing);
+    expect(find.text('Destinations'), findsNothing);
+
+    // Expand again
+    final expandBtn = find.byIcon(Icons.unfold_more);
+    await tester.tap(expandBtn);
+    await tester.pumpAndSettle();
+
+    // Detailed rows reappear
+    expect(find.text('Triage'), findsOneWidget);
+    expect(find.text('Protocols'), findsOneWidget);
+
+    // 5. Test Clear All Filters clears text, NOT mode, and resets results
+    final clearBtn = find.text('Clear All Filters');
+    expect(clearBtn, findsOneWidget);
+    await tester.ensureVisible(clearBtn);
+    await tester.tap(clearBtn);
+    await tester.pumpAndSettle();
+
+    expect(vm.sourceSearch, isEmpty);
+    expect(vm.destSearch, isEmpty);
+    expect(vm.isDestSearchNot, isFalse);
+    expect(vm.hasActiveFilters, isFalse);
+  });
+
+  testWidgets('AddEndpointDialog defaults Name/Alias to <ip>:<port> when port is provided', (tester) async {
+    tester.view.physicalSize = const Size(1000, 700);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    // 1. With IP and Port
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: AddEndpointDialog(
+            type: EndpointType.sender,
+            prefillIp: '192.168.1.50',
+            prefillPort: 8080,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('192.168.1.50:8080'), findsOneWidget);
+    expect(find.text('192.168.1.50'), findsOneWidget);
+    expect(find.text('8080'), findsOneWidget);
+
+    // 2. Test EndpointRule.displayName does not duplicate
+    const ruleWithPortName = EndpointRule(
+      id: 'ep1',
+      name: '192.168.1.50:8080',
+      ipAddress: '192.168.1.50',
+      port: 8080,
+    );
+    expect(ruleWithPortName.displayName, equals('192.168.1.50:8080'));
+
+    const ruleWithCustomName = EndpointRule(
+      id: 'ep2',
+      name: 'Web Server',
+      ipAddress: '192.168.1.50',
+      port: 8080,
+    );
+    expect(ruleWithCustomName.displayName, equals('Web Server (192.168.1.50:8080)'));
   });
 }

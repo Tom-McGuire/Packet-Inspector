@@ -177,6 +177,50 @@ void main() {
       );
       expect(httpResults.length, equals(1));
       expect(httpResults.first.detectedProtocol, equals('HTTP'));
+
+      // Test combining triage with protocol and NOT inversion
+      final combinedExpectedHttp = dbService.queryPackets(
+        triageStatuses: {TriageStatus.expected},
+        protocolPills: {'HTTP'},
+      );
+      expect(combinedExpectedHttp.length, equals(1));
+
+      // Inverted protocol: NOT HTTP (returns DNS)
+      final notHttp = dbService.queryPackets(
+        protocolPills: {'HTTP'},
+        isProtocolNot: true,
+      );
+      expect(notHttp.length, equals(1));
+      expect(notHttp.first.detectedProtocol, equals('DNS'));
+
+      // Source Search Box: positive and NOT
+      final srcSearchMatch = dbService.queryPackets(
+        sourceSearch: '1.1.1.1:100',
+      );
+      expect(srcSearchMatch.length, equals(1));
+      expect(srcSearchMatch.first.srcIp, equals('1.1.1.1'));
+      expect(srcSearchMatch.first.srcPort, equals(100));
+
+      final srcSearchNot = dbService.queryPackets(
+        sourceSearch: '1.1.1.1:100',
+        isSourceSearchNot: true,
+      );
+      expect(srcSearchNot.length, equals(1));
+      expect(srcSearchNot.first.detectedProtocol, equals('DNS'));
+
+      // Destination Search Box: positive and NOT
+      final dstSearchMatch = dbService.queryPackets(
+        destSearch: '8.8.8.8',
+      );
+      expect(dstSearchMatch.length, equals(1));
+      expect(dstSearchMatch.first.dstIp, equals('8.8.8.8'));
+
+      final dstSearchNot = dbService.queryPackets(
+        destSearch: '8.8.8.8',
+        isDestSearchNot: true,
+      );
+      expect(dstSearchNot.length, equals(1));
+      expect(dstSearchNot.first.dstIp, equals('2.2.2.2'));
     });
 
     test('Retroactive Custom Protocol re-labeling in SQLite', () {
@@ -400,6 +444,33 @@ void main() {
         tempDir1.deleteSync(recursive: true);
         tempDir2.deleteSync(recursive: true);
       } catch (_) {}
+    });
+
+    test('Contextual filter counts update dynamically based on active filter criteria', () {
+      final repo = PacketRepository();
+      repo.loadDemoCapture();
+
+      // Overall capture counts
+      final allProtocols = repo.getProtocolCounts(silenceLanChatter: false);
+      expect(allProtocols.containsKey('DNS'), isTrue);
+      expect(allProtocols.containsKey('HTTP'), isTrue);
+
+      // Filter contextual counts for a specific source IP
+      final dnsSenderCounts = repo.getProtocolCounts(
+        sourceSearch: '192.168.1.10',
+        silenceLanChatter: false,
+      );
+      // Under this source, HTTP and DNS counts match only packets from 192.168.1.10
+      expect(dnsSenderCounts['DNS'], isNotNull);
+
+      // Contextual top senders given destination 8.8.8.8
+      final sendersToDns = repo.getTopSenders(
+        destSearch: '8.8.8.8',
+        silenceLanChatter: false,
+      );
+      expect(sendersToDns.containsKey('192.168.1.10'), isTrue);
+
+      repo.dispose();
     });
   });
 }

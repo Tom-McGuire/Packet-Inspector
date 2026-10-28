@@ -5,10 +5,10 @@
 // 'flutter create' template.
 
 // The application's name. By default this is also the title of the Flutter window.
-PRODUCT_NAME = packet_inspector
+PRODUCT_NAME = Packet Inspector
 
 // The application's bundle identifier
-PRODUCT_BUNDLE_IDENTIFIER = com.example.packetInspector
+PRODUCT_BUNDLE_IDENTIFIER = io.github.tommcguire.packetInspector
 
 // The copyright displayed in application information
-PRODUCT_COPYRIGHT = Copyright © 2026 com.example. All rights reserved.
+PRODUCT_COPYRIGHT = Copyright © 2026 Tom McGuire. All rights reserved.

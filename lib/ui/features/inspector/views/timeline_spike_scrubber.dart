@@ -88,11 +88,7 @@ class _TimelineSpikeScrubberState extends State<TimelineSpikeScrubber> {
                 // Bandwidth summary indicator
                 Tooltip(
                   message: vm.portBandwidths.isNotEmpty
-                      ? 'Top Ports by Bandwidth:\n' +
-                          vm.portBandwidths.entries
-                              .take(5)
-                              .map((e) => 'Port ${e.key}: ${InspectorViewModel.formatBandwidth(e.value)}')
-                              .join('\n')
+                      ? 'Top Ports by Bandwidth:\n${vm.portBandwidths.entries.take(5).map((e) => 'Port ${e.key}: ${InspectorViewModel.formatBandwidth(e.value)}').join('\n')}'
                       : 'Average and peak throughput across capture',
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),

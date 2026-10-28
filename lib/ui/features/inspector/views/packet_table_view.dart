@@ -237,7 +237,9 @@ class _PacketTableViewState extends State<PacketTableView> {
           Icon(Icons.format_list_numbered, size: 14, color: Theme.of(context).colorScheme.primary),
           const SizedBox(width: 6),
           Text(
-            'Showing $loadedCount of ${vm.totalPacketCount} packets',
+            vm.totalPacketCount < vm.rawCapturePacketCount
+                ? 'Showing $loadedCount of ${vm.totalPacketCount} matching packets (${vm.rawCapturePacketCount} total in capture)'
+                : 'Showing $loadedCount of ${vm.totalPacketCount} packets',
             style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600),
           ),
           if (vm.hasMorePackets) ...[
@@ -648,7 +650,11 @@ class _PacketTableViewState extends State<PacketTableView> {
             children: [
               const Icon(Icons.arrow_upward, size: 16, color: Colors.blueAccent),
               const SizedBox(width: 8),
-              Expanded(child: Text('Save Source (${packet.srcIp}) to Source Library...')),
+              Expanded(
+                child: Text(
+                  'Save Source (${packet.srcPort != null ? '${packet.srcIp}:${packet.srcPort}' : packet.srcIp}) to Source Library...',
+                ),
+              ),
             ],
           ),
         ),
@@ -673,7 +679,11 @@ class _PacketTableViewState extends State<PacketTableView> {
               children: [
                 const Icon(Icons.arrow_downward, size: 16, color: Colors.greenAccent),
                 const SizedBox(width: 8),
-                Expanded(child: Text('Save Destination (${packet.dstIp}) to Destination Library...')),
+                Expanded(
+                  child: Text(
+                    'Save Destination (${packet.dstPort != null ? '${packet.dstIp}:${packet.dstPort}' : packet.dstIp}) to Destination Library...',
+                  ),
+                ),
               ],
             ),
           ),
