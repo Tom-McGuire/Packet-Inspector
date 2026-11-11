@@ -148,7 +148,7 @@ class _TimelineSpikeScrubberState extends State<TimelineSpikeScrubber> {
                         metricTitle = 'Bandwidth: ${b.formattedBandwidth}\nRate: ${(b.bytesPerSecond / 1024.0).toStringAsFixed(1)} KB/s (${b.totalBytes} B)';
                       }
                       return BarTooltipItem(
-                        'Time: ${b.startSeconds.toStringAsFixed(2)}s\n$metricTitle\n${b.unexpectedCount} unexpected\n(Click to zoom)',
+                        'Time: ${b.formattedDateTime}\n$metricTitle\n${b.unexpectedCount} unexpected\n(Click to zoom)',
                         TextStyle(
                           color: Theme.of(context).colorScheme.onInverseSurface,
                           fontSize: 11,

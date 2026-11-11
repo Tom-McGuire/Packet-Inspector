@@ -13,6 +13,12 @@ class AiSettings {
     this.geminiModel = 'gemini-3.8-flash',
     this.ollamaUrl = 'http://localhost:11434',
     this.ollamaModel = 'gemma2:9b',
+    this.agyPath = '',
+    this.claudePath = '',
+    this.codexPath = '',
+    this.agyModel = 'gemini-3.8-flash-low',
+    this.claudeModel = 'haiku',
+    this.codexModel = 'gpt-4o-mini',
   });
 
   final LlmBackendMode backendMode;
@@ -20,6 +26,12 @@ class AiSettings {
   final String geminiModel;
   final String ollamaUrl;
   final String ollamaModel;
+  final String agyPath;
+  final String claudePath;
+  final String codexPath;
+  final String agyModel;
+  final String claudeModel;
+  final String codexModel;
 
   AiSettings copyWith({
     LlmBackendMode? backendMode,
@@ -27,6 +39,12 @@ class AiSettings {
     String? geminiModel,
     String? ollamaUrl,
     String? ollamaModel,
+    String? agyPath,
+    String? claudePath,
+    String? codexPath,
+    String? agyModel,
+    String? claudeModel,
+    String? codexModel,
   }) {
     return AiSettings(
       backendMode: backendMode ?? this.backendMode,
@@ -34,6 +52,12 @@ class AiSettings {
       geminiModel: geminiModel ?? this.geminiModel,
       ollamaUrl: ollamaUrl ?? this.ollamaUrl,
       ollamaModel: ollamaModel ?? this.ollamaModel,
+      agyPath: agyPath ?? this.agyPath,
+      claudePath: claudePath ?? this.claudePath,
+      codexPath: codexPath ?? this.codexPath,
+      agyModel: agyModel ?? this.agyModel,
+      claudeModel: claudeModel ?? this.claudeModel,
+      codexModel: codexModel ?? this.codexModel,
     );
   }
 }
@@ -100,6 +124,12 @@ class AiSettingsStorageService {
 
       final ollamaUrl = map['ollama_url'] as String? ?? 'http://localhost:11434';
       final ollamaModel = map['ollama_model'] as String? ?? 'gemma2:9b';
+      final agyPath = map['agy_path'] as String? ?? '';
+      final claudePath = map['claude_path'] as String? ?? '';
+      final codexPath = map['codex_path'] as String? ?? '';
+      final agyModel = map['agy_model'] as String? ?? 'gemini-3.8-flash-low';
+      final claudeModel = map['claude_model'] as String? ?? 'haiku';
+      final codexModel = map['codex_model'] as String? ?? 'gpt-4o-mini';
 
       return AiSettings(
         backendMode: backendMode,
@@ -107,6 +137,12 @@ class AiSettingsStorageService {
         geminiModel: effectiveGeminiModel,
         ollamaUrl: ollamaUrl,
         ollamaModel: ollamaModel,
+        agyPath: agyPath,
+        claudePath: claudePath,
+        codexPath: codexPath,
+        agyModel: agyModel,
+        claudeModel: claudeModel,
+        codexModel: codexModel,
       );
     } catch (_) {
       return const AiSettings();
@@ -127,6 +163,12 @@ class AiSettingsStorageService {
         'gemini_model': settings.geminiModel.isNotEmpty ? settings.geminiModel : 'gemini-3.8-flash',
         'ollama_url': settings.ollamaUrl,
         'ollama_model': settings.ollamaModel,
+        'agy_path': settings.agyPath,
+        'claude_path': settings.claudePath,
+        'codex_path': settings.codexPath,
+        'agy_model': settings.agyModel,
+        'claude_model': settings.claudeModel,
+        'codex_model': settings.codexModel,
       };
 
       file.writeAsStringSync(const JsonEncoder.withIndent('  ').convert(map));

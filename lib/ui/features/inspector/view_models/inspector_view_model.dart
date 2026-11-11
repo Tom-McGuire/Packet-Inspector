@@ -89,7 +89,16 @@ class InspectorViewModel extends ChangeNotifier {
   double _avgCaptureBandwidthBps = 0.0;
   Map<int, double> _portBandwidths = {};
 
+  final Map<int, PacketRecord> _flaggedPackets = {};
+  int? _requestScrollToPacketNo;
+
   // Getters
+  List<PacketRecord> get flaggedPackets =>
+      _flaggedPackets.values.toList()..sort((a, b) => a.timestampUs.compareTo(b.timestampUs));
+  int get flaggedPacketCount => _flaggedPackets.length;
+  bool isPacketFlagged(int packetNo) => _flaggedPackets.containsKey(packetNo);
+  int? get requestScrollToPacketNo => _requestScrollToPacketNo;
+
   bool get isTriageMode => _isTriageMode;
   bool get silenceLanChatter => _silenceLanChatter;
   bool get showAutoDetected => _showAutoDetected;
@@ -604,6 +613,70 @@ class InspectorViewModel extends ChangeNotifier {
       _selectedPacketPayloadBytes = null;
     }
     notifyListeners();
+  }
+
+  void consumeScrollToPacketRequest() {
+    _requestScrollToPacketNo = null;
+  }
+
+  void togglePacketFlag(PacketRecord packet) {
+    if (_flaggedPackets.containsKey(packet.packetNo)) {
+      _flaggedPackets.remove(packet.packetNo);
+    } else {
+      _flaggedPackets[packet.packetNo] = packet;
+    }
+    notifyListeners();
+  }
+
+  void clearAllFlaggedPackets() {
+    _flaggedPackets.clear();
+    notifyListeners();
+  }
+
+  void jumpToPacket(PacketRecord packet) {
+    if (_timeWindowStartUs != null && packet.timestampUs < _timeWindowStartUs! ||
+        _timeWindowEndUs != null && packet.timestampUs > _timeWindowEndUs!) {
+      _timeWindowStartUs = null;
+      _timeWindowEndUs = null;
+      _refreshPackets();
+    }
+    selectPacket(packet);
+    _requestScrollToPacketNo = packet.packetNo;
+    notifyListeners();
+  }
+
+  void selectNextPacket() {
+    if (_packets.isEmpty) return;
+    if (_selectedPacket == null) {
+      selectPacket(_packets.first);
+      _requestScrollToPacketNo = _packets.first.packetNo;
+      notifyListeners();
+      return;
+    }
+    final currentIndex = _packets.indexWhere((p) => p.packetNo == _selectedPacket!.packetNo);
+    if (currentIndex != -1 && currentIndex < _packets.length - 1) {
+      final nextPacket = _packets[currentIndex + 1];
+      selectPacket(nextPacket);
+      _requestScrollToPacketNo = nextPacket.packetNo;
+      notifyListeners();
+    }
+  }
+
+  void selectPreviousPacket() {
+    if (_packets.isEmpty) return;
+    if (_selectedPacket == null) {
+      selectPacket(_packets.last);
+      _requestScrollToPacketNo = _packets.last.packetNo;
+      notifyListeners();
+      return;
+    }
+    final currentIndex = _packets.indexWhere((p) => p.packetNo == _selectedPacket!.packetNo);
+    if (currentIndex > 0) {
+      final prevPacket = _packets[currentIndex - 1];
+      selectPacket(prevPacket);
+      _requestScrollToPacketNo = prevPacket.packetNo;
+      notifyListeners();
+    }
   }
 
   void addCustomProtocol(CustomProtocolRule rule) {

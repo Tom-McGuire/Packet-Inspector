@@ -46,61 +46,78 @@ class _HexByteInspectorState extends State<HexByteInspector> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
             color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-            child: Row(
-              children: [
-                const Icon(Icons.code, size: 16),
-                const SizedBox(width: 8),
-                Text(
-                  'Packet #${packet.packetNo} Inspector (${bytes.length} bytes)',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                ),
-                const SizedBox(width: 16),
-
-                // View Toggle: Payload vs Full Frame
-                SegmentedButton<bool>(
-                  segments: const [
-                    ButtonSegment(value: true, label: Text('L4 Payload', style: TextStyle(fontSize: 11))),
-                    ButtonSegment(value: false, label: Text('Full Frame', style: TextStyle(fontSize: 11))),
-                  ],
-                  selected: {_showPayloadOnly},
-                  onSelectionChanged: (set) {
-                    setState(() {
-                      _showPayloadOnly = set.first;
-                      _selectedByteStart = null;
-                      _selectedByteEnd = null;
-                    });
-                  },
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                ),
-
-                const Spacer(),
-
-                // Use Selection as Magic Bytes Action Button
-                if (_selectedByteStart != null && bytes.isNotEmpty) ...[
-                  FilledButton.tonalIcon(
-                    icon: const Icon(Icons.add_circle_outline, size: 14),
-                    label: Text(
-                      'Use Selection as Magic Bytes (Offset $_selectedByteStart)',
-                      style: const TextStyle(fontSize: 11),
-                    ),
-                    onPressed: () => _openAddProtocolFromSelection(context, vm, bytes),
-                  ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  const Icon(Icons.code, size: 16),
                   const SizedBox(width: 8),
-                  IconButton(
-                    icon: const Icon(Icons.clear, size: 16),
-                    tooltip: 'Clear selection',
-                    onPressed: () {
+                  Text(
+                    'Packet #${packet.packetNo} Inspector (${bytes.length} bytes)',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                  ),
+                  const SizedBox(width: 16),
+
+                  // View Toggle: Payload vs Full Frame
+                  SegmentedButton<bool>(
+                    segments: const [
+                      ButtonSegment(value: true, label: Text('L4 Payload', style: TextStyle(fontSize: 11))),
+                      ButtonSegment(value: false, label: Text('Full Frame', style: TextStyle(fontSize: 11))),
+                    ],
+                    selected: {_showPayloadOnly},
+                    onSelectionChanged: (set) {
                       setState(() {
+                        _showPayloadOnly = set.first;
                         _selectedByteStart = null;
                         _selectedByteEnd = null;
                       });
                     },
+                    style: const ButtonStyle(
+                      visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                   ),
+                  const SizedBox(width: 8),
+
+                  // Flag / Unflag Packet Button
+                  IconButton(
+                    icon: Icon(
+                      vm.isPacketFlagged(packet.packetNo) ? Icons.flag : Icons.flag_outlined,
+                      size: 16,
+                      color: vm.isPacketFlagged(packet.packetNo) ? Colors.amber : null,
+                    ),
+                    tooltip: vm.isPacketFlagged(packet.packetNo)
+                        ? 'Unflag Packet #${packet.packetNo}'
+                        : 'Flag Packet #${packet.packetNo}',
+                    onPressed: () => vm.togglePacketFlag(packet),
+                  ),
+
+                  const SizedBox(width: 16),
+
+                  // Use Selection as Magic Bytes Action Button
+                  if (_selectedByteStart != null && bytes.isNotEmpty) ...[
+                    FilledButton.tonalIcon(
+                      icon: const Icon(Icons.add_circle_outline, size: 14),
+                      label: Text(
+                        'Use Selection as Magic Bytes (Offset $_selectedByteStart)',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      onPressed: () => _openAddProtocolFromSelection(context, vm, bytes),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton(
+                      icon: const Icon(Icons.clear, size: 16),
+                      tooltip: 'Clear selection',
+                      onPressed: () {
+                        setState(() {
+                          _selectedByteStart = null;
+                          _selectedByteEnd = null;
+                        });
+                      },
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
           ),
 
@@ -153,7 +170,7 @@ class _HexByteInspectorState extends State<HexByteInspector> {
     final rowCount = (bytes.length / bytesPerRow).ceil();
 
     return ListView.builder(
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(vertical: 4),
       itemCount: rowCount,
       itemBuilder: (context, rowIndex) {
         final rowOffset = rowIndex * bytesPerRow;
@@ -162,14 +179,16 @@ class _HexByteInspectorState extends State<HexByteInspector> {
           (rowOffset + bytesPerRow <= bytes.length) ? (rowOffset + bytesPerRow) : bytes.length,
         );
 
-        return Padding(
-          padding: const EdgeInsets.symmetric(vertical: 1.0),
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 1.5),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               // Offset column
               SizedBox(
-                width: 60,
+                width: 50,
                 child: Text(
                   rowOffset.toRadixString(16).padLeft(4, '0'),
                   style: TextStyle(
@@ -179,71 +198,67 @@ class _HexByteInspectorState extends State<HexByteInspector> {
                   ),
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 12),
 
               // Hex columns (8 bytes + gap + 8 bytes)
-              Expanded(
-                flex: 3,
-                child: Row(
-                  children: [
-                    for (int i = 0; i < bytesPerRow; i++) ...[
-                      if (i == 8) const SizedBox(width: 8),
-                      if (i < rowBytes.length)
-                        InkWell(
-                          onTap: () => _handleByteTap(rowOffset + i),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
-                            decoration: BoxDecoration(
-                              color: _isByteSelected(rowOffset + i)
-                                  ? Theme.of(context).colorScheme.primaryContainer
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(2),
-                            ),
-                            child: Text(
-                              rowBytes[i].toRadixString(16).padLeft(2, '0').toUpperCase(),
-                              style: TextStyle(
-                                fontFamily: 'monospace',
-                                fontSize: 12,
-                                fontWeight: _isByteSelected(rowOffset + i)
-                                    ? FontWeight.bold
-                                    : FontWeight.normal,
-                              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (int i = 0; i < bytesPerRow; i++) ...[
+                    if (i == 8) const SizedBox(width: 10),
+                    if (i < rowBytes.length)
+                      InkWell(
+                        onTap: () => _handleByteTap(rowOffset + i),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 2.5),
+                          decoration: BoxDecoration(
+                            color: _isByteSelected(rowOffset + i)
+                                ? Theme.of(context).colorScheme.primaryContainer
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                          child: Text(
+                            rowBytes[i].toRadixString(16).padLeft(2, '0').toUpperCase(),
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 12,
+                              fontWeight: _isByteSelected(rowOffset + i)
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                             ),
                           ),
-                        )
-                      else
-                        const SizedBox(width: 20),
-                      const SizedBox(width: 4),
-                    ],
+                        ),
+                      )
+                    else
+                      const SizedBox(width: 20),
+                    const SizedBox(width: 3),
                   ],
-                ),
+                ],
               ),
 
               const SizedBox(width: 16),
 
               // ASCII column
-              Expanded(
-                flex: 2,
-                child: Row(
-                  children: [
-                    for (int i = 0; i < rowBytes.length; i++)
-                      Text(
-                        (rowBytes[i] >= 32 && rowBytes[i] <= 126)
-                            ? String.fromCharCode(rowBytes[i])
-                            : '.',
-                        style: TextStyle(
-                          fontFamily: 'monospace',
-                          fontSize: 12,
-                          color: _isByteSelected(rowOffset + i)
-                              ? Theme.of(context).colorScheme.primary
-                              : Theme.of(context).colorScheme.onSurface,
-                          fontWeight: _isByteSelected(rowOffset + i)
-                              ? FontWeight.bold
-                              : FontWeight.normal,
-                        ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  for (int i = 0; i < rowBytes.length; i++)
+                    Text(
+                      (rowBytes[i] >= 32 && rowBytes[i] <= 126)
+                          ? String.fromCharCode(rowBytes[i])
+                          : '.',
+                      style: TextStyle(
+                        fontFamily: 'monospace',
+                        fontSize: 12,
+                        color: _isByteSelected(rowOffset + i)
+                            ? Theme.of(context).colorScheme.primary
+                            : Theme.of(context).colorScheme.onSurface,
+                        fontWeight: _isByteSelected(rowOffset + i)
+                            ? FontWeight.bold
+                            : FontWeight.normal,
                       ),
-                  ],
-                ),
+                    ),
+                ],
               ),
             ],
           ),

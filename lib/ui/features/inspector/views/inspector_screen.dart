@@ -9,10 +9,11 @@ import 'dual_mode_filter_bar.dart';
 import 'timeline_spike_scrubber.dart';
 import 'packet_table_view.dart';
 import 'hex_byte_inspector.dart';
-import '../../protocol_library/views/custom_library_dialog.dart';
+import 'flagged_packets_panel.dart';
+import 'inspector_top_control_bar.dart';
 import '../../../../core/config/feature_flags.dart';
 
-class InspectorScreen extends StatelessWidget {
+class InspectorScreen extends StatefulWidget {
   const InspectorScreen({
     super.key,
     this.aiPanelSlot,
@@ -23,139 +24,29 @@ class InspectorScreen extends StatelessWidget {
   final bool showAiAssistant;
 
   @override
+  State<InspectorScreen> createState() => _InspectorScreenState();
+}
+
+class _InspectorScreenState extends State<InspectorScreen> {
+  double _bottomPanelHeight = 280.0;
+
+  @override
   Widget build(BuildContext context) {
     final vm = context.watch<InspectorViewModel>();
 
     return Scaffold(
-      appBar: AppBar(
-        centerTitle: false,
-        titleSpacing: 16,
-        title: FittedBox(
-          fit: BoxFit.scaleDown,
-          alignment: Alignment.centerLeft,
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.radar, color: Colors.indigoAccent),
-              const SizedBox(width: 8),
-              const Text(
-                'Packet Inspector',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-              ),
-              if (vm.loadedFileName != null) ...[
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.5),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.insert_drive_file_outlined, size: 14),
-                      const SizedBox(width: 4),
-                      Text(
-                        vm.loadedFileName!,
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
-          ),
-        ),
-        actions: [
-          // Open PCAP / PCAPNG Button
-          FilledButton.tonalIcon(
-            icon: const Icon(Icons.folder_open, size: 16),
-            label: const Text('Open PCAP'),
-            onPressed: () => _handleOpenFile(context, vm),
-          ),
-          const SizedBox(width: 8),
-
-          // Load Demo Capture
-          OutlinedButton.icon(
-            icon: const Icon(Icons.play_circle_outline, size: 16),
-            label: const Text('Load Demo'),
-            onPressed: () => vm.loadDemoCapture(),
-          ),
-          const SizedBox(width: 8),
-
-          // Custom Library Button
-          OutlinedButton.icon(
-            icon: const Icon(Icons.menu_book, size: 16),
-            label: const Text('Custom Library'),
-            onPressed: () => showDialog(
-              context: context,
-              builder: (ctx) => CustomLibraryDialog(viewModel: vm),
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // Export CSV Dropdown
-          PopupMenuButton<String>(
-            tooltip: 'Export CSV',
-            child: const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  Icon(Icons.download, size: 16),
-                  SizedBox(width: 6),
-                  Text('Export CSV', style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
-                  Icon(Icons.arrow_drop_down, size: 16),
-                ],
-              ),
-            ),
-            onSelected: (val) {
-              if (val == 'packets') {
-                final csv = vm.exportFilteredPacketsCsv();
-                _showCsvPreviewDialog(context, 'Filtered Packets CSV', csv);
-              } else if (val == 'flows') {
-                final csv = vm.exportFlowsCsv();
-                _showCsvPreviewDialog(context, '5-Tuple Conversation Flows CSV', csv);
-              }
-            },
-            itemBuilder: (ctx) => const [
-              PopupMenuItem(
-                value: 'packets',
-                child: Row(
-                  children: [
-                    Icon(Icons.table_rows_outlined, size: 16),
-                    SizedBox(width: 8),
-                    Text('Export Filtered Packets'),
-                  ],
-                ),
-              ),
-              PopupMenuItem(
-                value: 'flows',
-                child: Row(
-                  children: [
-                    Icon(Icons.swap_horiz, size: 16),
-                    SizedBox(width: 8),
-                    Text('Export 5-Tuple Flows'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(width: 8),
-
-          // AI Assistant Drawer Toggle (controlled by build flag / showAiAssistant)
-          if (showAiAssistant && aiPanelSlot != null) ...[
-            FilledButton.icon(
-              style: FilledButton.styleFrom(
-                backgroundColor: vm.isAiPanelOpen ? Colors.purple : null,
-              ),
-              icon: const Icon(Icons.auto_awesome, size: 16),
-              label: const Text('AI Assistant'),
-              onPressed: () => vm.toggleAiPanel(),
-            ),
-            const SizedBox(width: 8),
-          ],
-          const SizedBox(width: 8),
-        ],
+      appBar: InspectorTopControlBar(
+        showAiAssistant: widget.showAiAssistant && widget.aiPanelSlot != null,
+        onOpenFile: () => _handleOpenFile(context, vm),
+        onExportSelected: (val) {
+          if (val == 'packets') {
+            final csv = vm.exportFilteredPacketsCsv();
+            _showCsvPreviewDialog(context, 'Filtered Packets CSV', csv);
+          } else if (val == 'flows') {
+            final csv = vm.exportFlowsCsv();
+            _showCsvPreviewDialog(context, '5-Tuple Conversation Flows CSV', csv);
+          }
+        },
       ),
       body: Row(
         children: [
@@ -170,20 +61,57 @@ class InspectorScreen extends StatelessWidget {
                 // Synchronized Delta-Time Spike Scrubber
                 const TimelineSpikeScrubber(),
 
-                // When capture loaded: Split between Packet Table & Hex Inspector.
+                // When capture loaded: Split between Packet Table & Resizable Bottom Panel.
                 // When empty: Full workspace for Packet Table empty state.
                 Expanded(
                   child: vm.loadedFileName != null
-                      ? const Column(
+                      ? Column(
                           children: [
-                            Expanded(
-                              flex: 6,
+                            const Expanded(
                               child: PacketTableView(),
                             ),
-                            Divider(height: 1),
-                            Expanded(
-                              flex: 4,
-                              child: HexByteInspector(),
+                            // Draggable horizontal resize divider
+                            MouseRegion(
+                              cursor: SystemMouseCursors.resizeRow,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onVerticalDragUpdate: (details) {
+                                  setState(() {
+                                    _bottomPanelHeight =
+                                        (_bottomPanelHeight - details.delta.dy).clamp(120.0, 600.0);
+                                  });
+                                },
+                                child: Container(
+                                  height: 8,
+                                  color: Theme.of(context).dividerColor.withValues(alpha: 0.15),
+                                  child: Center(
+                                    child: Container(
+                                      width: 48,
+                                      height: 3,
+                                      decoration: BoxDecoration(
+                                        color: Theme.of(context).dividerColor,
+                                        borderRadius: BorderRadius.circular(2),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            // Adjustable bottom section: Left half Hex Inspector, Right half Flagged Packets
+                            SizedBox(
+                              height: _bottomPanelHeight,
+                              child: const Row(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Expanded(
+                                    child: HexByteInspector(),
+                                  ),
+                                  VerticalDivider(width: 1),
+                                  Expanded(
+                                    child: FlaggedPacketsPanel(),
+                                  ),
+                                ],
+                              ),
                             ),
                           ],
                         )
@@ -194,11 +122,11 @@ class InspectorScreen extends StatelessWidget {
           ),
 
           // AI Assistant Panel
-          if (showAiAssistant && vm.isAiPanelOpen && aiPanelSlot != null) ...[
+          if (widget.showAiAssistant && vm.isAiPanelOpen && widget.aiPanelSlot != null) ...[
             const VerticalDivider(width: 1),
             SizedBox(
               width: 380,
-              child: aiPanelSlot!,
+              child: widget.aiPanelSlot!,
             ),
           ],
         ],
@@ -290,7 +218,7 @@ class InspectorScreen extends StatelessWidget {
 
                 if (uri != null && context.mounted) {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Saved CSV successfully!')),
+                    const SnackBar(content: Text('Saved CSV successfully!')),
                   );
                   Navigator.of(ctx).pop();
                 }

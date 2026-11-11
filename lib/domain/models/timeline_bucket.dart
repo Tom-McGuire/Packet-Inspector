@@ -26,6 +26,20 @@ class TimelineBucket {
   double get minGlobalDeltaMs => minGlobalDeltaUs / 1000.0;
   double get maxStreamDeltaMs => maxStreamDeltaUs / 1000.0;
 
+  DateTime get dateTime => DateTime.fromMicrosecondsSinceEpoch(bucketStartUs);
+
+  String get formattedDateTime {
+    final dt = DateTime.fromMicrosecondsSinceEpoch(bucketStartUs);
+    final y = dt.year.toString().padLeft(4, '0');
+    final m = dt.month.toString().padLeft(2, '0');
+    final d = dt.day.toString().padLeft(2, '0');
+    final h = dt.hour.toString().padLeft(2, '0');
+    final min = dt.minute.toString().padLeft(2, '0');
+    final s = dt.second.toString().padLeft(2, '0');
+    final ms = dt.millisecond.toString().padLeft(3, '0');
+    return '$y-$m-$d $h:$min:$s.$ms';
+  }
+
   double get durationSeconds {
     final diff = bucketEndUs - bucketStartUs;
     return diff > 0 ? diff / 1000000.0 : 1.0;
