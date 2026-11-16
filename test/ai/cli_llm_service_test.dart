@@ -23,73 +23,97 @@ void main() {
     });
 
     test('checkStatus reports unauthenticated when agy returns login prompt', () async {
-      final cli = CliLlmService(
-        processRunner: (exe, args, {runInShell = false, timeout}) async {
-          if (args.contains('--version')) {
-            return ProcessResult(1, 0, '1.4.12', '');
-          }
-          return ProcessResult(
-            1,
-            0,
-            'Authentication required. Please visit the URL to log in: https://accounts.google.com/...',
-            '',
-          );
-        },
-      );
+      final tempDir = Directory.systemTemp.createTempSync('agy_test_');
+      final tempFile = File('${tempDir.path}/dummy_agy_bin')..createSync();
+      try {
+        final cli = CliLlmService(
+          processRunner: (exe, args, {runInShell = false, timeout}) async {
+            if (args.contains('--version')) {
+              return ProcessResult(1, 0, '1.4.12', '');
+            }
+            return ProcessResult(
+              1,
+              0,
+              'Authentication required. Please visit the URL to log in: https://accounts.google.com/...',
+              '',
+            );
+          },
+        );
 
-      final status = await cli.checkStatus(CliType.antigravity, customPath: '/snap/bin/agy');
-      expect(status.isInstalled, isTrue);
-      expect(status.isAuthenticated, isFalse);
-      expect(status.version, equals('1.4.12'));
-      expect(status.message.contains('authentication required'), isTrue);
+        final status = await cli.checkStatus(CliType.antigravity, customPath: tempFile.path);
+        expect(status.isInstalled, isTrue);
+        expect(status.isAuthenticated, isFalse);
+        expect(status.version, equals('1.4.12'));
+        expect(status.message.contains('authentication required'), isTrue);
+      } finally {
+        if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+      }
     });
 
     test('checkStatus reports authenticated when agy succeeds', () async {
-      final cli = CliLlmService(
-        processRunner: (exe, args, {runInShell = false, timeout}) async {
-          if (args.contains('--version')) {
-            return ProcessResult(1, 0, '1.4.12', '');
-          }
-          return ProcessResult(1, 0, 'pong', '');
-        },
-      );
+      final tempDir = Directory.systemTemp.createTempSync('agy_test_');
+      final tempFile = File('${tempDir.path}/dummy_agy_bin')..createSync();
+      try {
+        final cli = CliLlmService(
+          processRunner: (exe, args, {runInShell = false, timeout}) async {
+            if (args.contains('--version')) {
+              return ProcessResult(1, 0, '1.4.12', '');
+            }
+            return ProcessResult(1, 0, 'pong', '');
+          },
+        );
 
-      final status = await cli.checkStatus(CliType.antigravity, customPath: '/snap/bin/agy');
-      expect(status.isInstalled, isTrue);
-      expect(status.isAuthenticated, isTrue);
-      expect(status.version, equals('1.4.12'));
-      expect(status.message.contains('Active subscription ready'), isTrue);
+        final status = await cli.checkStatus(CliType.antigravity, customPath: tempFile.path);
+        expect(status.isInstalled, isTrue);
+        expect(status.isAuthenticated, isTrue);
+        expect(status.version, equals('1.4.12'));
+        expect(status.message.contains('Active subscription ready'), isTrue);
+      } finally {
+        if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+      }
     });
 
     test('queryAgy returns stdout text on success', () async {
-      final cli = CliLlmService(
-        processRunner: (exe, args, {runInShell = false, timeout}) async {
-          expect(args.contains('-p'), isTrue);
-          expect(args.contains('--dangerously-skip-permissions'), isTrue);
-          return ProcessResult(1, 0, 'Traffic analysis completed: normal HTTPS traffic.', '');
-        },
-      );
+      final tempDir = Directory.systemTemp.createTempSync('agy_test_');
+      final tempFile = File('${tempDir.path}/dummy_agy_bin')..createSync();
+      try {
+        final cli = CliLlmService(
+          processRunner: (exe, args, {runInShell = false, timeout}) async {
+            expect(args.contains('-p'), isTrue);
+            expect(args.contains('--dangerously-skip-permissions'), isTrue);
+            return ProcessResult(1, 0, 'Traffic analysis completed: normal HTTPS traffic.', '');
+          },
+        );
 
-      final result = await cli.queryAgy('Analyze traffic', customPath: '/snap/bin/agy');
-      expect(result, equals('Traffic analysis completed: normal HTTPS traffic.'));
+        final result = await cli.queryAgy('Analyze traffic', customPath: tempFile.path);
+        expect(result, equals('Traffic analysis completed: normal HTTPS traffic.'));
+      } finally {
+        if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+      }
     });
 
     test('queryAgy surfaces clear message on auth failure', () async {
-      final cli = CliLlmService(
-        processRunner: (exe, args, {runInShell = false, timeout}) async {
-          return ProcessResult(
-            1,
-            1,
-            'Authentication required. Please visit the URL to log in',
-            '',
-          );
-        },
-      );
+      final tempDir = Directory.systemTemp.createTempSync('agy_test_');
+      final tempFile = File('${tempDir.path}/dummy_agy_bin')..createSync();
+      try {
+        final cli = CliLlmService(
+          processRunner: (exe, args, {runInShell = false, timeout}) async {
+            return ProcessResult(
+              1,
+              1,
+              'Authentication required. Please visit the URL to log in',
+              '',
+            );
+          },
+        );
 
-      expect(
-        () => cli.queryAgy('Analyze traffic', customPath: '/snap/bin/agy'),
-        throwsA(predicate((e) => e.toString().contains('run "agy" to authenticate your subscription'))),
-      );
+        await expectLater(
+          cli.queryAgy('Analyze traffic', customPath: tempFile.path),
+          throwsA(predicate((e) => e.toString().contains('run "agy" to authenticate your subscription'))),
+        );
+      } finally {
+        if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+      }
     });
 
     test('queryClaude returns output on success', () async {
@@ -161,7 +185,7 @@ void main() {
           },
         );
 
-        expect(
+        await expectLater(
           cli.queryCodex('Analyze traffic', customPath: tempFile.path),
           throwsA(predicate((e) => e.toString().contains('link your ChatGPT subscription'))),
         );
@@ -262,9 +286,10 @@ void main() {
     });
 
     test('sendMessage routes to Antigravity CLI and returns combined assistant message', () async {
-      storage.saveSettings(const AiSettings(
+      final tempFile = File('${tempDir.path}/dummy_agy_bin')..createSync();
+      storage.saveSettings(AiSettings(
         backendMode: LlmBackendMode.antigravityCli,
-        agyPath: '/snap/bin/agy',
+        agyPath: tempFile.path,
       ));
 
       final mockCli = CliLlmService(
@@ -287,9 +312,10 @@ void main() {
     });
 
     test('sendMessage falls back to deterministic analysis when CLI fails', () async {
-      storage.saveSettings(const AiSettings(
+      final tempFile = File('${tempDir.path}/dummy_agy_bin')..createSync();
+      storage.saveSettings(AiSettings(
         backendMode: LlmBackendMode.antigravityCli,
-        agyPath: '/snap/bin/agy',
+        agyPath: tempFile.path,
       ));
 
       final mockCli = CliLlmService(
