@@ -1,6 +1,8 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 import '../../../../core/config/feature_flags.dart';
+import '../../compare/view_models/capture_compare_view_model.dart';
+import '../../compare/views/compare_setup_dialog.dart';
 import '../view_models/inspector_view_model.dart';
 import '../../protocol_library/views/custom_library_dialog.dart';
 
@@ -22,6 +24,7 @@ class InspectorTopControlBar extends StatelessWidget implements PreferredSizeWid
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<InspectorViewModel>();
+    final compareVm = Provider.of<CaptureCompareViewModel?>(context);
 
     return Container(
       height: 52,
@@ -124,7 +127,10 @@ class InspectorTopControlBar extends StatelessWidget implements PreferredSizeWid
 
                         // ==================== ZONE 3: PRIMARY ACTIONS ====================
                         FilledButton.icon(
-                          onPressed: onOpenFile,
+                          onPressed: () {
+                            compareVm?.exitCompareMode();
+                            onOpenFile();
+                          },
                           icon: const Icon(Icons.folder_open, size: 16),
                           label: const Text(
                             'Open PCAP',
@@ -137,6 +143,45 @@ class InspectorTopControlBar extends StatelessWidget implements PreferredSizeWid
                             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
                           ),
                         ),
+                        const SizedBox(width: 8),
+                        if (compareVm != null) ...[
+                          OutlinedButton.icon(
+                            onPressed: () => showDialog<bool>(
+                              context: context,
+                              builder: (_) => const CompareSetupDialog(),
+                            ),
+                            icon: const Icon(Icons.compare_arrows_rounded, size: 16),
+                            label: Text(
+                              compareVm.isCompareMode ? 'Re-Compare' : 'Compare PCAPs',
+                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
+                            ),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: const Color(0xFF38BDF8),
+                              side: BorderSide(
+                                color: const Color(0xFF38BDF8).withValues(alpha: 0.45),
+                              ),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            ),
+                          ),
+                          if (compareVm.isCompareMode) ...[
+                            const SizedBox(width: 8),
+                            FilledButton.icon(
+                              onPressed: compareVm.exitCompareMode,
+                              icon: const Icon(Icons.close_rounded, size: 15),
+                              label: const Text(
+                                'Exit Compare',
+                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                              ),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFFEF4444),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                              ),
+                            ),
+                          ],
+                        ],
                       ],
                     ),
 

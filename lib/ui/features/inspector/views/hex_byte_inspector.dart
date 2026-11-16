@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 import '../../../../domain/models/custom_protocol_rule.dart';
 import '../view_models/inspector_view_model.dart';

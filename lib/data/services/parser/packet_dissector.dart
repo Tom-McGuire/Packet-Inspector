@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import '../../../domain/models/custom_protocol_rule.dart';
+import '../diff/capture_fingerprint_service.dart';
 import 'pcap_binary_reader.dart';
 
 class DissectedPacketInfo {
@@ -19,6 +20,11 @@ class DissectedPacketInfo {
     required this.flowHash,
     this.customProtocolId,
     this.customFields = const {},
+    this.fingerprintHash = 0,
+    this.dscpValue,
+    this.vlanId,
+    this.tcpSeqNum,
+    this.extractedSeq,
   });
 
   final int ethType;
@@ -36,6 +42,11 @@ class DissectedPacketInfo {
   final int flowHash;
   String? customProtocolId;
   Map<String, dynamic> customFields;
+  final int fingerprintHash;
+  final int? dscpValue;
+  final int? vlanId;
+  final int? tcpSeqNum;
+  final int? extractedSeq;
 }
 
 class PacketDissector {
@@ -50,6 +61,7 @@ class PacketDissector {
 
     int linkOffset = 0;
     int ethType = 0x0800; // Default IPv4
+    int? vlanId;
 
     switch (rawPacket.linkType) {
       case 1: // Ethernet II
@@ -58,6 +70,7 @@ class PacketDissector {
         linkOffset = 14;
         if (ethType == 0x8100 && bytes.length >= 18) {
           // 802.1Q VLAN Tagged
+          vlanId = ((bytes[14] & 0x0F) << 8) | bytes[15];
           ethType = (bytes[16] << 8) | bytes[17];
           linkOffset = 18;
         }
@@ -84,14 +97,30 @@ class PacketDissector {
 
     if (ethType == 0x0806) {
       // ARP
-      return _dissectArp(bytes, linkOffset);
+      return _dissectArp(bytes, linkOffset, vlanId: vlanId);
     } else if (ethType == 0x0800) {
       // IPv4
-      return _dissectIPv4(bytes, linkOffset, customRules);
+      return _dissectIPv4(bytes, linkOffset, customRules, vlanId: vlanId);
     } else if (ethType == 0x86DD) {
       // IPv6
-      return _dissectIPv6(bytes, linkOffset, customRules);
+      return _dissectIPv6(bytes, linkOffset, customRules, vlanId: vlanId);
     }
+
+    final payloadLen = bytes.length > linkOffset ? bytes.length - linkOffset : 0;
+    final payloadSlice = payloadLen > 0
+        ? Uint8List.sublistView(bytes, linkOffset, linkOffset + payloadLen)
+        : Uint8List(0);
+    final fpHash = CaptureFingerprintService.computeFingerprint(
+      ethType: ethType,
+      srcIp: '',
+      dstIp: '',
+      ipProto: 0,
+      srcPort: null,
+      dstPort: null,
+      tcpSeqNum: null,
+      payloadBytes: payloadSlice,
+      fullFrameBytes: bytes,
+    );
 
     return DissectedPacketInfo(
       ethType: ethType,
@@ -103,14 +132,16 @@ class PacketDissector {
       detectedProtocol: 'ETH:0x${ethType.toRadixString(16).padLeft(4, '0')}',
       summary: 'Link-layer frame (type 0x${ethType.toRadixString(16)})',
       payloadOffsetInPacket: linkOffset,
-      payloadLength: bytes.length > linkOffset ? bytes.length - linkOffset : 0,
-      payloadPreview: _extractPreview(bytes, linkOffset, bytes.length - linkOffset),
+      payloadLength: payloadLen,
+      payloadPreview: _extractPreview(bytes, linkOffset, payloadLen),
       isLanNoise: false,
       flowHash: 0,
+      vlanId: vlanId,
+      fingerprintHash: fpHash,
     );
   }
 
-  static DissectedPacketInfo _dissectArp(Uint8List bytes, int offset) {
+  static DissectedPacketInfo _dissectArp(Uint8List bytes, int offset, {int? vlanId}) {
     if (bytes.length < offset + 28) {
       return DissectedPacketInfo(
         ethType: 0x0806,
@@ -126,6 +157,7 @@ class PacketDissector {
         payloadPreview: _extractPreview(bytes, offset, bytes.length - offset),
         isLanNoise: true,
         flowHash: 0,
+        vlanId: vlanId,
       );
     }
 
@@ -143,6 +175,17 @@ class PacketDissector {
     }
 
     final flowHash = computeFlowHash(senderIp, targetIp, 0, 0, 0x0806);
+    final fpHash = CaptureFingerprintService.computeFingerprint(
+      ethType: 0x0806,
+      srcIp: senderIp,
+      dstIp: targetIp,
+      ipProto: 0,
+      srcPort: null,
+      dstPort: null,
+      tcpSeqNum: null,
+      payloadBytes: Uint8List(0),
+      fullFrameBytes: bytes,
+    );
 
     return DissectedPacketInfo(
       ethType: 0x0806,
@@ -158,14 +201,17 @@ class PacketDissector {
       payloadPreview: _extractPreview(bytes, offset, 28),
       isLanNoise: true,
       flowHash: flowHash,
+      vlanId: vlanId,
+      fingerprintHash: fpHash,
     );
   }
 
   static DissectedPacketInfo _dissectIPv4(
     Uint8List bytes,
     int offset,
-    List<CustomProtocolRule> customRules,
-  ) {
+    List<CustomProtocolRule> customRules, {
+    int? vlanId,
+  }) {
     if (bytes.length < offset + 20) {
       return _emptyDissection();
     }
@@ -175,6 +221,7 @@ class PacketDissector {
       return _emptyDissection();
     }
 
+    final dscpValue = (bytes[offset + 1] >> 2) & 0x3F;
     final ipProto = bytes[offset + 9];
     final srcIp = '${bytes[offset + 12]}.${bytes[offset + 13]}.${bytes[offset + 14]}.${bytes[offset + 15]}';
     final dstIp = '${bytes[offset + 16]}.${bytes[offset + 17]}.${bytes[offset + 18]}.${bytes[offset + 19]}';
@@ -188,18 +235,22 @@ class PacketDissector {
       ipProto: ipProto,
       l4Offset: l4Offset,
       customRules: customRules,
+      dscpValue: dscpValue,
+      vlanId: vlanId,
     );
   }
 
   static DissectedPacketInfo _dissectIPv6(
     Uint8List bytes,
     int offset,
-    List<CustomProtocolRule> customRules,
-  ) {
+    List<CustomProtocolRule> customRules, {
+    int? vlanId,
+  }) {
     if (bytes.length < offset + 40) {
       return _emptyDissection();
     }
 
+    final dscpValue = ((bytes[offset] & 0x0F) << 2) | ((bytes[offset + 1] >> 6) & 0x03);
     final nextHeader = bytes[offset + 6];
     final srcIp = _formatIPv6(bytes, offset + 8);
     final dstIp = _formatIPv6(bytes, offset + 24);
@@ -213,6 +264,8 @@ class PacketDissector {
       ipProto: nextHeader,
       l4Offset: l4Offset,
       customRules: customRules,
+      dscpValue: dscpValue,
+      vlanId: vlanId,
     );
   }
 
@@ -224,9 +277,12 @@ class PacketDissector {
     required int ipProto,
     required int l4Offset,
     required List<CustomProtocolRule> customRules,
+    int? dscpValue,
+    int? vlanId,
   }) {
     int? srcPort;
     int? dstPort;
+    int? tcpSeqNum;
     String protoName = 'IP';
     String summary = '';
     int payloadOffset = l4Offset;
@@ -241,6 +297,7 @@ class PacketDissector {
           (bytes[l4Offset + 5] << 16) |
           (bytes[l4Offset + 6] << 8) |
           bytes[l4Offset + 7];
+      tcpSeqNum = seqNum;
       final ackNum = (bytes[l4Offset + 8] << 24) |
           (bytes[l4Offset + 9] << 16) |
           (bytes[l4Offset + 10] << 8) |
@@ -368,6 +425,27 @@ class PacketDissector {
       }
     }
 
+    int? extractedSeq = _extractSequenceNumber(
+      ipProto: ipProto,
+      srcPort: srcPort,
+      dstPort: dstPort,
+      tcpSeqNum: tcpSeqNum,
+      payload: payloadSlice,
+      customFields: customFields,
+    );
+
+    final fpHash = CaptureFingerprintService.computeFingerprint(
+      ethType: ethType,
+      srcIp: srcIp,
+      dstIp: dstIp,
+      ipProto: ipProto,
+      srcPort: srcPort,
+      dstPort: dstPort,
+      tcpSeqNum: tcpSeqNum,
+      payloadBytes: payloadSlice,
+      fullFrameBytes: bytes,
+    );
+
     return DissectedPacketInfo(
       ethType: ethType,
       srcIp: srcIp,
@@ -384,7 +462,69 @@ class PacketDissector {
       flowHash: flowHash,
       customProtocolId: matchedRuleId,
       customFields: customFields,
+      fingerprintHash: fpHash,
+      dscpValue: dscpValue,
+      vlanId: vlanId,
+      tcpSeqNum: tcpSeqNum,
+      extractedSeq: extractedSeq,
     );
+  }
+
+  static int? _extractSequenceNumber({
+    required int ipProto,
+    required int? srcPort,
+    required int? dstPort,
+    required int? tcpSeqNum,
+    required Uint8List payload,
+    required Map<String, dynamic> customFields,
+  }) {
+    // 1. Custom Protocol Field Slice named 'seq' or 'sequence' (case-insensitive)
+    for (final entry in customFields.entries) {
+      final keyLower = entry.key.toLowerCase();
+      if (keyLower == 'seq' || keyLower == 'sequence') {
+        final val = entry.value;
+        if (val is int) return val;
+        if (val is String) {
+          final parsed = int.tryParse(val);
+          if (parsed != null) return parsed;
+        }
+      }
+    }
+
+    // 2. Built-in sACN (E1.31) on UDP 5568: byte 111 is 8-bit sequence number
+    if (ipProto == 17 && (srcPort == 5568 || dstPort == 5568) && payload.length >= 112) {
+      // Check ACN Packet Identifier "ASC-E1.17" at offset 4..12
+      if (payload[4] == 0x41 &&
+          payload[5] == 0x53 &&
+          payload[6] == 0x43 &&
+          payload[7] == 0x2d &&
+          payload[8] == 0x45 &&
+          payload[9] == 0x31 &&
+          payload[10] == 0x2e &&
+          payload[11] == 0x31 &&
+          payload[12] == 0x37) {
+        return payload[111];
+      }
+    }
+
+    // 3. Built-in Art-Net OpDmx on UDP 6454: byte 12 is 8-bit sequence number
+    if (ipProto == 17 && (srcPort == 6454 || dstPort == 6454) && payload.length >= 14) {
+      if (payload[0] == 0x41 &&
+          payload[1] == 0x72 &&
+          payload[2] == 0x74 &&
+          payload[3] == 0x2d &&
+          payload[4] == 0x4e &&
+          payload[5] == 0x65 &&
+          payload[6] == 0x74 &&
+          payload[7] == 0x00 &&
+          payload[8] == 0x00 &&
+          payload[9] == 0x50) {
+        return payload[12];
+      }
+    }
+
+    // 4. TCP sequence number
+    return tcpSeqNum;
   }
 
   static _L7Result? _inspectL7({

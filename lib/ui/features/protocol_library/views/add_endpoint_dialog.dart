@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import '../../../../domain/models/endpoint_rule.dart';
 
 class AddEndpointDialog extends StatefulWidget {

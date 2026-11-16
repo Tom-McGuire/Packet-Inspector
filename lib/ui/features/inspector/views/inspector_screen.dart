@@ -1,9 +1,14 @@
 import 'dart:io';
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 import 'package:file_picker/file_picker.dart';
+import '../../compare/view_models/capture_compare_view_model.dart';
+import '../../compare/views/compare_summary_bar.dart';
+import '../../compare/views/diff_packet_table.dart';
+import '../../compare/views/diff_timeline_scrubber.dart';
+import '../../compare/views/hex_diff_inspector.dart';
 import '../view_models/inspector_view_model.dart';
 import 'dual_mode_filter_bar.dart';
 import 'timeline_spike_scrubber.dart';
@@ -33,6 +38,8 @@ class _InspectorScreenState extends State<InspectorScreen> {
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<InspectorViewModel>();
+    final compareVm = Provider.of<CaptureCompareViewModel?>(context);
+    final isCompareMode = compareVm?.isCompareMode ?? false;
 
     return Scaffold(
       appBar: InspectorTopControlBar(
@@ -53,72 +60,65 @@ class _InspectorScreenState extends State<InspectorScreen> {
           // Main Workspace
           Expanded(
             flex: 3,
-            child: Column(
-              children: [
-                // Top Dual-Mode Filter Bar
-                const DualModeFilterBar(),
-
-                // Synchronized Delta-Time Spike Scrubber
-                const TimelineSpikeScrubber(),
-
-                // When capture loaded: Split between Packet Table & Resizable Bottom Panel.
-                // When empty: Full workspace for Packet Table empty state.
-                Expanded(
-                  child: vm.loadedFileName != null
-                      ? Column(
+            child: isCompareMode
+                ? Column(
+                    children: [
+                      const CompareSummaryBar(),
+                      const DiffTimelineScrubber(),
+                      Expanded(
+                        child: Column(
                           children: [
-                            const Expanded(
-                              child: PacketTableView(),
-                            ),
-                            // Draggable horizontal resize divider
-                            MouseRegion(
-                              cursor: SystemMouseCursors.resizeRow,
-                              child: GestureDetector(
-                                behavior: HitTestBehavior.translucent,
-                                onVerticalDragUpdate: (details) {
-                                  setState(() {
-                                    _bottomPanelHeight =
-                                        (_bottomPanelHeight - details.delta.dy).clamp(120.0, 600.0);
-                                  });
-                                },
-                                child: Container(
-                                  height: 8,
-                                  color: Theme.of(context).dividerColor.withValues(alpha: 0.15),
-                                  child: Center(
-                                    child: Container(
-                                      width: 48,
-                                      height: 3,
-                                      decoration: BoxDecoration(
-                                        color: Theme.of(context).dividerColor,
-                                        borderRadius: BorderRadius.circular(2),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                            // Adjustable bottom section: Left half Hex Inspector, Right half Flagged Packets
+                            const Expanded(child: DiffPacketTable()),
+                            _buildResizeDivider(context),
                             SizedBox(
                               height: _bottomPanelHeight,
-                              child: const Row(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Expanded(
-                                    child: HexByteInspector(),
-                                  ),
-                                  VerticalDivider(width: 1),
-                                  Expanded(
-                                    child: FlaggedPacketsPanel(),
-                                  ),
-                                ],
-                              ),
+                              child: const HexDiffInspector(),
                             ),
                           ],
-                        )
-                      : const PacketTableView(),
-                ),
-              ],
-            ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Column(
+                    children: [
+                      // Top Dual-Mode Filter Bar
+                      const DualModeFilterBar(),
+
+                      // Synchronized Delta-Time Spike Scrubber
+                      const TimelineSpikeScrubber(),
+
+                      // When capture loaded: Split between Packet Table & Resizable Bottom Panel.
+                      // When empty: Full workspace for Packet Table empty state.
+                      Expanded(
+                        child: vm.loadedFileName != null
+                            ? Column(
+                                children: [
+                                  const Expanded(
+                                    child: PacketTableView(),
+                                  ),
+                                  _buildResizeDivider(context),
+                                  // Adjustable bottom section: Left half Hex Inspector, Right half Flagged Packets
+                                  SizedBox(
+                                    height: _bottomPanelHeight,
+                                    child: const Row(
+                                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                                      children: [
+                                        Expanded(
+                                          child: HexByteInspector(),
+                                        ),
+                                        VerticalDivider(width: 1),
+                                        Expanded(
+                                          child: FlaggedPacketsPanel(),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              )
+                            : const PacketTableView(),
+                      ),
+                    ],
+                  ),
           ),
 
           // AI Assistant Panel
@@ -130,6 +130,35 @@ class _InspectorScreenState extends State<InspectorScreen> {
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  Widget _buildResizeDivider(BuildContext context) {
+    return MouseRegion(
+      cursor: SystemMouseCursors.resizeRow,
+      child: GestureDetector(
+        behavior: HitTestBehavior.translucent,
+        onVerticalDragUpdate: (details) {
+          setState(() {
+            _bottomPanelHeight =
+                (_bottomPanelHeight - details.delta.dy).clamp(120.0, 600.0);
+          });
+        },
+        child: Container(
+          height: 8,
+          color: Theme.of(context).dividerColor.withValues(alpha: 0.15),
+          child: Center(
+            child: Container(
+              width: 48,
+              height: 3,
+              decoration: BoxDecoration(
+                color: Theme.of(context).dividerColor,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }

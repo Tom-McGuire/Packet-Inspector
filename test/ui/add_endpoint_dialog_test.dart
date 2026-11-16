@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:packet_inspector/domain/models/endpoint_rule.dart';
 import 'package:packet_inspector/ui/features/protocol_library/views/add_endpoint_dialog.dart';

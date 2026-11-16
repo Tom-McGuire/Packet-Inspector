@@ -1,5 +1,7 @@
+import '../../../domain/models/packet_diff_record.dart';
 import '../../../domain/models/packet_record.dart';
 import '../../repositories/packet_repository.dart';
+import '../diff/multi_capture_diff_engine.dart';
 import 'ai_filter_references.dart';
 
 class AiToolResult {
@@ -258,6 +260,67 @@ class PacketAiTools {
           'protocol': p.detectedProtocol,
           'summary': p.summary,
         }).toList(),
+      },
+    );
+  }
+
+  /// Deterministic GenUI tool summarizing multi-capture hop-by-hop loss,
+  /// clock skew, QoS/VLAN mutations, and providing a "Jump to First Drop" target.
+  AiToolResult compareCapturesSummary(MultiCaptureDiffEngine diffEngine) {
+    final slots = diffEngine.slots;
+    if (slots.length < 2) {
+      return const AiToolResult(
+        toolName: 'compare_captures_summary',
+        summaryText: 'No active multi-capture comparison loaded. Use "Compare PCAPs" to load 2–4 captures.',
+        widgetType: 'compare_summary_card',
+        data: {'hasComparison': false},
+      );
+    }
+
+    final records = diffEngine.queryDiffRecords(filterMode: DiffFilterMode.sharedFlowsOnly);
+    final totalShared = records.length;
+    final droppedRecords = records.where((r) => r.statuses.contains(DiffStatus.dropped)).toList();
+    final sourceGapCount = records.where((r) => r.statuses.contains(DiffStatus.sourceGap)).length;
+    final outOfOrderCount = records.where((r) => r.statuses.contains(DiffStatus.outOfOrder)).length;
+    final mutatedCount = records.where((r) => r.statuses.contains(DiffStatus.qosVlanMutated)).length;
+    final spikeCount = records.where((r) => r.statuses.contains(DiffStatus.latencySpike)).length;
+
+    final sb = StringBuffer();
+    sb.writeln('Multi-Capture Path Comparison Summary:');
+    sb.writeln('• Correlated Shared-Flow Packets: $totalShared');
+    for (int i = 1; i < slots.length; i++) {
+      final slot = slots[i];
+      final delivered = records.where((r) => r.hopMatches.containsKey(i)).length;
+      final pct = totalShared > 0 ? ((delivered / totalShared) * 100).toStringAsFixed(1) : '0.0';
+      sb.writeln('• Hop $i (${slot.label}): $delivered/$totalShared ($pct%) • Skew: ${slot.formattedClockOffset}');
+    }
+    sb.writeln(
+      '• Faults: ${droppedRecords.length} Dropped | $sourceGapCount Source Gaps | '
+      '$outOfOrderCount Out-of-Order | $mutatedCount QoS/VLAN Mutated | $spikeCount Latency Spikes',
+    );
+
+    final firstDropRow = droppedRecords.isNotEmpty ? droppedRecords.first : null;
+    if (firstDropRow != null) {
+      sb.writeln(
+        '• First Drop: Baseline Frame #${firstDropRow.baselineFrameNumber} '
+        '(${firstDropRow.protocolName} ${firstDropRow.flowDisplay}) — ${firstDropRow.statusDetail}',
+      );
+    }
+
+    return AiToolResult(
+      toolName: 'compare_captures_summary',
+      summaryText: sb.toString().trim(),
+      widgetType: 'compare_summary_card',
+      data: {
+        'hasComparison': true,
+        'totalShared': totalShared,
+        'droppedCount': droppedRecords.length,
+        'sourceGapCount': sourceGapCount,
+        'outOfOrderCount': outOfOrderCount,
+        'mutatedCount': mutatedCount,
+        'spikeCount': spikeCount,
+        'firstDropRowIndex': firstDropRow?.rowIndex,
+        'firstDropFrameNumber': firstDropRow?.baselineFrameNumber,
       },
     );
   }
