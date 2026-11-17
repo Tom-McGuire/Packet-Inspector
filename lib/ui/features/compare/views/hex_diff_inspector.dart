@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/theme/app_theme.dart';
 import '../view_models/capture_compare_view_model.dart';
 
 class HexDiffInspector extends StatelessWidget {
@@ -13,12 +14,14 @@ class HexDiffInspector extends StatelessWidget {
     final vm = context.watch<CaptureCompareViewModel>();
     final record = vm.selectedRecord;
     final slots = vm.slots;
+    final accentColor =
+        AppTheme.isDark ? const Color(0xFF38BDF8) : AppTheme.accent;
 
     if (record == null || slots.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'Select a correlated packet row above to inspect byte-level header diffs.',
-          style: TextStyle(color: Colors.white54, fontSize: 12),
+          style: TextStyle(color: AppTheme.textSecondary, fontSize: 12),
         ),
       );
     }
@@ -49,32 +52,32 @@ class HexDiffInspector extends StatelessWidget {
     }
 
     return Container(
-      color: const Color(0xFF0D1117),
+      color: AppTheme.scaffoldBg,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
             decoration: BoxDecoration(
-              color: const Color(0xFF161B22),
+              color: AppTheme.surface,
               border: Border(
-                bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+                bottom: BorderSide(color: AppTheme.border),
               ),
             ),
             child: Row(
               children: [
-                const Icon(
+                Icon(
                   Icons.difference_rounded,
                   size: 15,
-                  color: Color(0xFF38BDF8),
+                  color: accentColor,
                 ),
                 const SizedBox(width: 8),
                 Text(
                   'Hex Diff Inspector — Row #${record.rowIndex + 1} (${record.protocolName})',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                    color: AppTheme.textPrimary,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -85,15 +88,17 @@ class HexDiffInspector extends StatelessWidget {
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFF59E0B).withValues(alpha: 0.16),
+                      color: AppTheme.warning.withValues(alpha: 0.16),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
                       '${diffOffsets.length} differing byte(s)',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.w600,
-                        color: Color(0xFFF59E0B),
+                        color: AppTheme.isDark
+                            ? AppTheme.warning
+                            : const Color(0xFF92400E),
                       ),
                     ),
                   ),
@@ -108,13 +113,17 @@ class HexDiffInspector extends StatelessWidget {
                       ),
                       selected: hopIndex == i,
                       onSelected: (_) => vm.setSelectedHopForHexDiff(i),
-                      selectedColor:
-                          const Color(0xFF38BDF8).withValues(alpha: 0.25),
-                      backgroundColor: const Color(0xFF0D1117),
+                      selectedColor: accentColor.withValues(
+                        alpha: AppTheme.isDark ? 0.25 : 0.15,
+                      ),
+                      backgroundColor: AppTheme.scaffoldBg,
+                      side: BorderSide(
+                        color: hopIndex == i ? accentColor : AppTheme.border,
+                      ),
                       labelStyle: TextStyle(
                         color: hopIndex == i
-                            ? const Color(0xFF38BDF8)
-                            : Colors.white70,
+                            ? accentColor
+                            : AppTheme.textSecondary,
                       ),
                       visualDensity: VisualDensity.compact,
                     ),
@@ -126,12 +135,14 @@ class HexDiffInspector extends StatelessWidget {
           if (record.statusDetail.isNotEmpty)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-              color: const Color(0xFFF59E0B).withValues(alpha: 0.08),
+              color: AppTheme.warning.withValues(alpha: 0.08),
               child: Text(
                 record.statusDetail,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: Color(0xFFFDE68A),
+                  color: AppTheme.isDark
+                      ? const Color(0xFFFDE68A)
+                      : const Color(0xFF92400E),
                 ),
               ),
             ),
@@ -149,7 +160,7 @@ class HexDiffInspector extends StatelessWidget {
                 ),
                 VerticalDivider(
                   width: 1,
-                  color: Colors.white.withValues(alpha: 0.1),
+                  color: AppTheme.border,
                 ),
                 Expanded(
                   child: _buildPane(
@@ -178,23 +189,23 @@ class HexDiffInspector extends StatelessWidget {
       children: [
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          color: const Color(0xFF11161E),
+          color: AppTheme.surfaceHigh,
           child: Text(
             title,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: Colors.white70,
+              color: AppTheme.textSecondary,
             ),
           ),
         ),
         Expanded(
           child: bytes == null
-              ? const Center(
+              ? Center(
                   child: Text(
                     'Packet not present at this hop.',
-                    style: TextStyle(color: Color(0xFFEF4444), fontSize: 12),
+                    style: TextStyle(color: AppTheme.error, fontSize: 12),
                   ),
                 )
               : _HexGrid(bytes: bytes, diffOffsets: diffOffsets),
@@ -227,10 +238,10 @@ class _HexGrid extends StatelessWidget {
                 width: 46,
                 child: Text(
                   start.toRadixString(16).padLeft(4, '0'),
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontFamily: 'monospace',
                     fontSize: 11,
-                    color: Colors.white38,
+                    color: AppTheme.textMuted,
                   ),
                 ),
               ),
@@ -246,12 +257,10 @@ class _HexGrid extends StatelessWidget {
                         ),
                         decoration: diffOffsets.contains(i)
                             ? BoxDecoration(
-                                color: const Color(0xFFF59E0B)
-                                    .withValues(alpha: 0.28),
+                                color: AppTheme.warning.withValues(alpha: 0.28),
                                 borderRadius: BorderRadius.circular(2),
                                 border: Border.all(
-                                  color: const Color(0xFFF59E0B)
-                                      .withValues(alpha: 0.7),
+                                  color: AppTheme.warning.withValues(alpha: 0.7),
                                   width: 0.6,
                                 ),
                               )
@@ -268,8 +277,10 @@ class _HexGrid extends StatelessWidget {
                                 ? FontWeight.w700
                                 : FontWeight.w400,
                             color: diffOffsets.contains(i)
-                                ? const Color(0xFFFDE68A)
-                                : Colors.white70,
+                                ? (AppTheme.isDark
+                                    ? const Color(0xFFFDE68A)
+                                    : const Color(0xFF92400E))
+                                : AppTheme.textSecondary,
                           ),
                         ),
                       ),

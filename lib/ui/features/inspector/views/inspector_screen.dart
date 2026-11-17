@@ -17,6 +17,8 @@ import 'hex_byte_inspector.dart';
 import 'flagged_packets_panel.dart';
 import 'inspector_top_control_bar.dart';
 import '../../../../core/config/feature_flags.dart';
+import '../../../../core/theme/app_theme.dart';
+import '../../../widgets/guided_tour_overlay.dart';
 
 class InspectorScreen extends StatefulWidget {
   const InspectorScreen({
@@ -35,101 +37,171 @@ class InspectorScreen extends StatefulWidget {
 class _InspectorScreenState extends State<InspectorScreen> {
   double _bottomPanelHeight = 280.0;
 
+  final GlobalKey _zone2And3Key = GlobalKey();
+  final GlobalKey _timelineKey = GlobalKey();
+  final GlobalKey _filterBarKey = GlobalKey();
+  final GlobalKey _packetTableKey = GlobalKey();
+  final GlobalKey _hexInspectorKey = GlobalKey();
+
+  void _ensureFirstPacketSelected(InspectorViewModel vm) {
+    if (vm.selectedPacket == null && vm.packets.isNotEmpty) {
+      vm.selectPacket(vm.packets.first);
+    }
+  }
+
+  List<GuidedTourStep> _buildTourSteps(InspectorViewModel vm) {
+    return [
+      GuidedTourStep(
+        targetKey: _zone2And3Key,
+        title: '1. Open PCAP & Protocol Library',
+        description:
+            'Open .pcap or .pcapng files, launch Multi-Capture Diff comparison, or define custom UDP/TCP protocol dissectors in the Custom Library.',
+      ),
+      GuidedTourStep(
+        targetKey: _timelineKey,
+        title: '2. Timeline Spike Scrubber',
+        description:
+            'Spot traffic bursts, latency stalls, and bandwidth spikes over time. Click any bar to zoom into that time window.',
+      ),
+      GuidedTourStep(
+        targetKey: _filterBarKey,
+        title: '3. Dual-Mode Filter Bar',
+        description:
+            'Filter packets dynamically by Source/Destination IP, triage status, protocol pills, or AND/NOT logic.',
+      ),
+      GuidedTourStep(
+        targetKey: _packetTableKey,
+        title: '4. High-Density Packet Table',
+        description:
+            'Navigate packets with Up/Down arrow keys, inspect timestamp deltas and decoded summaries, or flag packets of interest.',
+        onStepEnter: () => _ensureFirstPacketSelected(vm),
+      ),
+      GuidedTourStep(
+        targetKey: _hexInspectorKey,
+        title: '5. Protocol Tree & Hex Byte Inspector',
+        description:
+            'Drill into frame headers, decoded custom fields, and synchronized hexadecimal/ASCII payload bytes alongside flagged packets.',
+        onStepEnter: () => _ensureFirstPacketSelected(vm),
+      ),
+    ];
+  }
+
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<InspectorViewModel>();
     final compareVm = Provider.of<CaptureCompareViewModel?>(context);
     final isCompareMode = compareVm?.isCompareMode ?? false;
 
-    return Scaffold(
-      appBar: InspectorTopControlBar(
-        showAiAssistant: widget.showAiAssistant && widget.aiPanelSlot != null,
-        onOpenFile: () => _handleOpenFile(context, vm),
-        onExportSelected: (val) {
-          if (val == 'packets') {
-            final csv = vm.exportFilteredPacketsCsv();
-            _showCsvPreviewDialog(context, 'Filtered Packets CSV', csv);
-          } else if (val == 'flows') {
-            final csv = vm.exportFlowsCsv();
-            _showCsvPreviewDialog(context, '5-Tuple Conversation Flows CSV', csv);
-          }
-        },
-      ),
-      body: Row(
-        children: [
-          // Main Workspace
-          Expanded(
-            flex: 3,
-            child: isCompareMode
-                ? Column(
-                    children: [
-                      const CompareSummaryBar(),
-                      const DiffTimelineScrubber(),
-                      Expanded(
-                        child: Column(
-                          children: [
-                            const Expanded(child: DiffPacketTable()),
-                            _buildResizeDivider(context),
-                            SizedBox(
-                              height: _bottomPanelHeight,
-                              child: const HexDiffInspector(),
-                            ),
-                          ],
+    return GuidedTourOverlay(
+      isActive: vm.isDemoMode && !isCompareMode,
+      steps: _buildTourSteps(vm),
+      onFinish: vm.endDemoWalkthrough,
+      child: Scaffold(
+        appBar: InspectorTopControlBar(
+          showAiAssistant: widget.showAiAssistant && widget.aiPanelSlot != null,
+          zone2And3TourKey: _zone2And3Key,
+          onOpenFile: () => _handleOpenFile(context, vm),
+          onExportSelected: (val) {
+            if (val == 'packets') {
+              final csv = vm.exportFilteredPacketsCsv();
+              _showCsvPreviewDialog(context, 'Filtered Packets CSV', csv);
+            } else if (val == 'flows') {
+              final csv = vm.exportFlowsCsv();
+              _showCsvPreviewDialog(context, '5-Tuple Conversation Flows CSV', csv);
+            }
+          },
+        ),
+        body: Row(
+          children: [
+            // Main Workspace
+            Expanded(
+              flex: 3,
+              child: isCompareMode
+                  ? Column(
+                      children: [
+                        const CompareSummaryBar(),
+                        const DiffTimelineScrubber(),
+                        Expanded(
+                          child: Column(
+                            children: [
+                              const Expanded(child: DiffPacketTable()),
+                              _buildResizeDivider(context),
+                              SizedBox(
+                                height: _bottomPanelHeight,
+                                child: const HexDiffInspector(),
+                              ),
+                            ],
+                          ),
                         ),
-                      ),
-                    ],
-                  )
-                : Column(
-                    children: [
-                      // Top Dual-Mode Filter Bar
-                      const DualModeFilterBar(),
+                      ],
+                    )
+                  : Column(
+                      children: [
+                        // Top Dual-Mode Filter Bar
+                        KeyedSubtree(
+                          key: _filterBarKey,
+                          child: const DualModeFilterBar(),
+                        ),
 
-                      // Synchronized Delta-Time Spike Scrubber
-                      const TimelineSpikeScrubber(),
+                        // Synchronized Delta-Time Spike Scrubber
+                        KeyedSubtree(
+                          key: _timelineKey,
+                          child: const TimelineSpikeScrubber(),
+                        ),
 
-                      // When capture loaded: Split between Packet Table & Resizable Bottom Panel.
-                      // When empty: Full workspace for Packet Table empty state.
-                      Expanded(
-                        child: vm.loadedFileName != null
-                            ? Column(
-                                children: [
-                                  const Expanded(
-                                    child: PacketTableView(),
-                                  ),
-                                  _buildResizeDivider(context),
-                                  // Adjustable bottom section: Left half Hex Inspector, Right half Flagged Packets
-                                  SizedBox(
-                                    height: _bottomPanelHeight,
-                                    child: const Row(
-                                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                                      children: [
-                                        Expanded(
-                                          child: HexByteInspector(),
-                                        ),
-                                        VerticalDivider(width: 1),
-                                        Expanded(
-                                          child: FlaggedPacketsPanel(),
-                                        ),
-                                      ],
+                        // When capture loaded: Split between Packet Table & Resizable Bottom Panel.
+                        // When empty: Full workspace for Packet Table empty state.
+                        Expanded(
+                          child: vm.loadedFileName != null
+                              ? Column(
+                                  children: [
+                                    Expanded(
+                                      child: KeyedSubtree(
+                                        key: _packetTableKey,
+                                        child: const PacketTableView(),
+                                      ),
                                     ),
-                                  ),
-                                ],
-                              )
-                            : const PacketTableView(),
-                      ),
-                    ],
-                  ),
-          ),
-
-          // AI Assistant Panel
-          if (widget.showAiAssistant && vm.isAiPanelOpen && widget.aiPanelSlot != null) ...[
-            const VerticalDivider(width: 1),
-            SizedBox(
-              width: 380,
-              child: widget.aiPanelSlot!,
+                                    _buildResizeDivider(context),
+                                    // Adjustable bottom section: Left half Hex Inspector, Right half Flagged Packets
+                                    SizedBox(
+                                      height: _bottomPanelHeight,
+                                      child: Row(
+                                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                                        children: [
+                                          Expanded(
+                                            child: KeyedSubtree(
+                                              key: _hexInspectorKey,
+                                              child: const HexByteInspector(),
+                                            ),
+                                          ),
+                                          const VerticalDivider(width: 1),
+                                          const Expanded(
+                                            child: FlaggedPacketsPanel(),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : KeyedSubtree(
+                                  key: _packetTableKey,
+                                  child: const PacketTableView(),
+                                ),
+                        ),
+                      ],
+                    ),
             ),
+
+            // AI Assistant Panel
+            if (widget.showAiAssistant && vm.isAiPanelOpen && widget.aiPanelSlot != null) ...[
+              const VerticalDivider(width: 1),
+              SizedBox(
+                width: 380,
+                child: widget.aiPanelSlot!,
+              ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }
@@ -210,15 +282,18 @@ class _InspectorScreenState extends State<InspectorScreen> {
                 child: Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: Colors.black87,
+                    color: AppTheme.surfaceHigh,
                     borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: AppTheme.border),
                   ),
                   child: SingleChildScrollView(
                     child: Text(
                       csvContent,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: 'monospace',
-                        color: Colors.lightGreenAccent,
+                        color: AppTheme.isDark
+                            ? Colors.lightGreenAccent
+                            : const Color(0xFF047857),
                         fontSize: 11,
                       ),
                     ),

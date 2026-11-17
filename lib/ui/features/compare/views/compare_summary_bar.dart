@@ -1,11 +1,27 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/theme/app_theme.dart';
 import '../../../../domain/models/packet_diff_record.dart';
 import '../view_models/capture_compare_view_model.dart';
 
 class CompareSummaryBar extends StatelessWidget {
   const CompareSummaryBar({super.key});
+
+  Color get _accentColor =>
+      AppTheme.isDark ? const Color(0xFF38BDF8) : AppTheme.accent;
+
+  Color get _sourceGapColor =>
+      AppTheme.isDark ? const Color(0xFFF43F5E) : const Color(0xFFE11D48);
+
+  Color get _oooColor =>
+      AppTheme.isDark ? const Color(0xFFA855F7) : const Color(0xFF9333EA);
+
+  Color get _mutatedColor =>
+      AppTheme.isDark ? AppTheme.warning : const Color(0xFFB45309);
+
+  Color get _spikeColor =>
+      AppTheme.isDark ? const Color(0xFFFB923C) : const Color(0xFFC2410C);
 
   @override
   Widget build(BuildContext context) {
@@ -16,9 +32,9 @@ class CompareSummaryBar extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
+        color: AppTheme.surface,
         border: Border(
-          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+          bottom: BorderSide(color: AppTheme.border),
         ),
       ),
       child: Column(
@@ -33,7 +49,7 @@ class CompareSummaryBar extends StatelessWidget {
               _buildMetricPill(
                 label: 'Correlated',
                 value: '${vm.totalModePacketCount}',
-                color: const Color(0xFF38BDF8),
+                color: _accentColor,
               ),
               for (final slot in slots)
                 _buildHopBadge(
@@ -52,7 +68,7 @@ class CompareSummaryBar extends StatelessWidget {
                   icon: const Icon(Icons.south_east_rounded, size: 14),
                   label: const Text('Jump to First Drop'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFEF4444),
+                    backgroundColor: AppTheme.error,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -76,37 +92,37 @@ class CompareSummaryBar extends StatelessWidget {
                 vm: vm,
                 filter: DiffStatusFilter.all,
                 label: 'All (${vm.totalModePacketCount})',
-                color: Colors.white70,
+                color: AppTheme.textSecondary,
               ),
               _buildStatusChip(
                 vm: vm,
                 filter: DiffStatusFilter.droppedOnly,
                 label: 'Dropped (${vm.droppedCount})',
-                color: const Color(0xFFEF4444),
+                color: AppTheme.error,
               ),
               _buildStatusChip(
                 vm: vm,
                 filter: DiffStatusFilter.sourceGaps,
                 label: 'Source Gaps (${vm.sourceGapCount})',
-                color: const Color(0xFFF43F5E),
+                color: _sourceGapColor,
               ),
               _buildStatusChip(
                 vm: vm,
                 filter: DiffStatusFilter.outOfOrder,
                 label: 'Out of Order (${vm.outOfOrderCount})',
-                color: const Color(0xFFA855F7),
+                color: _oooColor,
               ),
               _buildStatusChip(
                 vm: vm,
                 filter: DiffStatusFilter.mutated,
                 label: 'QoS / VLAN Mutated (${vm.mutatedCount})',
-                color: const Color(0xFFF59E0B),
+                color: _mutatedColor,
               ),
               _buildStatusChip(
                 vm: vm,
                 filter: DiffStatusFilter.latencySpikes,
                 label: 'Latency Spikes (${vm.spikeCount})',
-                color: const Color(0xFFFB923C),
+                color: _spikeColor,
               ),
             ],
           ),
@@ -132,7 +148,7 @@ class CompareSummaryBar extends StatelessWidget {
         children: [
           Text(
             '$label: ',
-            style: const TextStyle(fontSize: 11, color: Colors.white60),
+            style: TextStyle(fontSize: 11, color: AppTheme.textSecondary),
           ),
           Text(
             value,
@@ -156,25 +172,25 @@ class CompareSummaryBar extends StatelessWidget {
   }) {
     final isHealthy = deliveryPercent >= 99.9;
     final color = index == 0
-        ? const Color(0xFF38BDF8)
-        : (isHealthy ? const Color(0xFF10B981) : const Color(0xFFF59E0B));
+        ? _accentColor
+        : (isHealthy ? AppTheme.success : _mutatedColor);
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1117),
+        color: AppTheme.scaffoldBg,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
             '${String.fromCharCode(65 + index)}: $label',
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 11,
               fontWeight: FontWeight.w600,
-              color: Colors.white,
+              color: AppTheme.textPrimary,
             ),
           ),
           const SizedBox(width: 6),
@@ -191,9 +207,9 @@ class CompareSummaryBar extends StatelessWidget {
             const SizedBox(width: 6),
             Text(
               '($clockOffset)',
-              style: const TextStyle(
+              style: TextStyle(
                 fontSize: 10,
-                color: Colors.white54,
+                color: AppTheme.textMuted,
                 fontFamily: 'monospace',
               ),
             ),
@@ -208,15 +224,16 @@ class CompareSummaryBar extends StatelessWidget {
       height: 28,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1117),
+        color: AppTheme.scaffoldBg,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<DiffFilterMode>(
           value: vm.filterMode,
-          dropdownColor: const Color(0xFF161B22),
-          style: const TextStyle(fontSize: 11, color: Colors.white),
+          dropdownColor: AppTheme.surface,
+          iconEnabledColor: AppTheme.textSecondary,
+          style: TextStyle(fontSize: 11, color: AppTheme.textPrimary),
           isDense: true,
           onChanged: (mode) {
             if (mode != null) vm.setFilterMode(mode);
@@ -246,17 +263,18 @@ class CompareSummaryBar extends StatelessWidget {
       height: 28,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1117),
+        color: AppTheme.scaffoldBg,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<int>(
           value: vm.flowSummaries.any((f) => f.flowHash == selectedValue)
               ? selectedValue
               : vm.flowSummaries.first.flowHash,
-          dropdownColor: const Color(0xFF161B22),
-          style: const TextStyle(fontSize: 11, color: Colors.white),
+          dropdownColor: AppTheme.surface,
+          iconEnabledColor: AppTheme.textSecondary,
+          style: TextStyle(fontSize: 11, color: AppTheme.textPrimary),
           isDense: true,
           onChanged: (hash) {
             if (hash == null) return;
@@ -287,17 +305,18 @@ class CompareSummaryBar extends StatelessWidget {
       height: 28,
       padding: const EdgeInsets.symmetric(horizontal: 8),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1117),
+        color: AppTheme.scaffoldBg,
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.14)),
+        border: Border.all(color: AppTheme.border),
       ),
       child: DropdownButtonHideUnderline(
         child: DropdownButton<double>(
           value: thresholds.contains(vm.latencyThresholdMs)
               ? vm.latencyThresholdMs
               : 10.0,
-          dropdownColor: const Color(0xFF161B22),
-          style: const TextStyle(fontSize: 11, color: Colors.white),
+          dropdownColor: AppTheme.surface,
+          iconEnabledColor: AppTheme.textSecondary,
+          style: TextStyle(fontSize: 11, color: AppTheme.textPrimary),
           isDense: true,
           onChanged: (val) {
             if (val != null) vm.setLatencyThresholdMs(val);
@@ -330,12 +349,10 @@ class CompareSummaryBar extends StatelessWidget {
         decoration: BoxDecoration(
           color: isSelected
               ? color.withValues(alpha: 0.22)
-              : const Color(0xFF0D1117),
+              : AppTheme.scaffoldBg,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
-            color: isSelected
-                ? color
-                : Colors.white.withValues(alpha: 0.12),
+            color: isSelected ? color : AppTheme.border,
           ),
         ),
         child: Text(
@@ -343,7 +360,7 @@ class CompareSummaryBar extends StatelessWidget {
           style: TextStyle(
             fontSize: 11,
             fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-            color: isSelected ? color : Colors.white70,
+            color: isSelected ? color : AppTheme.textSecondary,
           ),
         ),
       ),

@@ -166,7 +166,7 @@ class _PacketTableViewState extends State<PacketTableView> {
                     OutlinedButton.icon(
                       icon: const Icon(Icons.play_circle_outline, size: 16),
                       label: const Text('Load Demo Capture'),
-                      onPressed: () => vm.loadDemoCapture(),
+                      onPressed: () => vm.startDemoWalkthrough(),
                     ),
                   ],
                 ),

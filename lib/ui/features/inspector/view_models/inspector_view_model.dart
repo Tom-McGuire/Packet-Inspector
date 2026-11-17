@@ -76,6 +76,7 @@ class InspectorViewModel extends ChangeNotifier {
   int _rawCapturePacketCount = 0;
   bool _isAiPanelOpen = false;
   bool _isLoading = false;
+  bool _isDemoMode = false;
 
   String _sortColumn = 'packet_no';
   bool _sortAscending = true;
@@ -161,6 +162,7 @@ class InspectorViewModel extends ChangeNotifier {
   int get rawCapturePacketCount => _rawCapturePacketCount;
   bool get isAiPanelOpen => _isAiPanelOpen;
   bool get isLoading => _isLoading;
+  bool get isDemoMode => _isDemoMode;
   String? get loadedFileName => _repository.loadedFilePath;
   List<CustomProtocolRule> get customRules => _repository.customRules;
   List<EndpointRule> get senders => _repository.senders;
@@ -281,7 +283,25 @@ class InspectorViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  void startDemoWalkthrough() {
+    _isDemoMode = true;
+    loadDemoCapture();
+  }
+
+  void clearCapture() {
+    _isDemoMode = false;
+    _repository.clearCapture();
+    _flaggedPackets.clear();
+    _requestScrollToPacketNo = null;
+    _resetFilters();
+    _refreshState();
+    notifyListeners();
+  }
+
+  void endDemoWalkthrough() => clearCapture();
+
   void loadFile(File file) {
+    _isDemoMode = false;
     _isLoading = true;
     notifyListeners();
 
@@ -294,6 +314,7 @@ class InspectorViewModel extends ChangeNotifier {
   }
 
   void loadBytes(Uint8List bytes, String name) {
+    _isDemoMode = false;
     _isLoading = true;
     notifyListeners();
 

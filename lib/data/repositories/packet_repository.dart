@@ -315,6 +315,13 @@ class PacketRepository {
     loadFromBytes(bytes, 'demo_capture.pcap');
   }
 
+  /// Clears the currently loaded capture and resets the in-memory database.
+  void clearCapture() {
+    _loadedFilePath = null;
+    _inMemoryBuffer = null;
+    _resetDatabase();
+  }
+
   /// Ingests a PCAP or PCAPNG buffer directly from memory.
   void loadFromBytes(Uint8List bytes, [String filename = 'capture.pcap']) {
     _inMemoryBuffer = bytes;

@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/theme/app_theme.dart';
 import '../../../../domain/models/packet_diff_record.dart';
 import '../view_models/capture_compare_view_model.dart';
 
@@ -20,19 +21,19 @@ class DiffTimelineScrubber extends StatelessWidget {
       height: 36,
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1117),
+        color: AppTheme.scaffoldBg,
         border: Border(
-          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.08)),
+          bottom: BorderSide(color: AppTheme.border),
         ),
       ),
       child: Row(
         children: [
-          const Text(
+          Text(
             'DIFF TIMELINE',
             style: TextStyle(
               fontSize: 10,
               fontWeight: FontWeight.w700,
-              color: Colors.white54,
+              color: AppTheme.textSecondary,
               letterSpacing: 0.6,
             ),
           ),
@@ -60,6 +61,8 @@ class DiffTimelineScrubber extends StatelessWidget {
                       selectedRowIndex: vm.selectedRecord != null
                           ? records.indexOf(vm.selectedRecord!)
                           : -1,
+                      isDark: AppTheme.isDark,
+                      surfaceColor: AppTheme.surface,
                     ),
                   ),
                 );
@@ -67,15 +70,21 @@ class DiffTimelineScrubber extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          _legendDot(const Color(0xFF10B981), 'OK'),
+          _legendDot(AppTheme.success, 'OK'),
           const SizedBox(width: 8),
-          _legendDot(const Color(0xFFEF4444), 'Drop'),
+          _legendDot(AppTheme.error, 'Drop'),
           const SizedBox(width: 8),
-          _legendDot(const Color(0xFFF59E0B), 'Mutated'),
+          _legendDot(AppTheme.warning, 'Mutated'),
           const SizedBox(width: 8),
-          _legendDot(const Color(0xFFA855F7), 'OOO'),
+          _legendDot(
+            AppTheme.isDark ? const Color(0xFFA855F7) : const Color(0xFF9333EA),
+            'OOO',
+          ),
           const SizedBox(width: 8),
-          _legendDot(const Color(0xFFFB923C), 'Spike'),
+          _legendDot(
+            AppTheme.isDark ? const Color(0xFFFB923C) : const Color(0xFFC2410C),
+            'Spike',
+          ),
         ],
       ),
     );
@@ -93,7 +102,7 @@ class DiffTimelineScrubber extends StatelessWidget {
         const SizedBox(width: 4),
         Text(
           label,
-          style: const TextStyle(fontSize: 10, color: Colors.white54),
+          style: TextStyle(fontSize: 10, color: AppTheme.textSecondary),
         ),
       ],
     );
@@ -105,15 +114,19 @@ class _DiffScrubberPainter extends CustomPainter {
     required this.records,
     required this.bucketCount,
     required this.selectedRowIndex,
+    required this.isDark,
+    required this.surfaceColor,
   });
 
   final List<PacketDiffRecord> records;
   final int bucketCount;
   final int selectedRowIndex;
+  final bool isDark;
+  final Color surfaceColor;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final bgPaint = Paint()..color = const Color(0xFF161B22);
+    final bgPaint = Paint()..color = surfaceColor;
     canvas.drawRRect(
       RRect.fromRectAndRadius(
         Offset.zero & size,
@@ -139,11 +152,12 @@ class _DiffScrubberPainter extends CustomPainter {
       }
 
       final color = switch (severity) {
-        4 => const Color(0xFFEF4444),
-        3 => const Color(0xFFA855F7),
-        2 => const Color(0xFFF59E0B),
-        1 => const Color(0xFFFB923C),
-        _ => const Color(0xFF10B981).withValues(alpha: 0.45),
+        4 => isDark ? const Color(0xFFEF4444) : const Color(0xFFDC2626),
+        3 => isDark ? const Color(0xFFA855F7) : const Color(0xFF9333EA),
+        2 => isDark ? const Color(0xFFF59E0B) : const Color(0xFFD97706),
+        1 => isDark ? const Color(0xFFFB923C) : const Color(0xFFEA580C),
+        _ => (isDark ? const Color(0xFF10B981) : const Color(0xFF059669))
+            .withValues(alpha: 0.45),
       };
 
       final heightFactor = severity == 0 ? 0.35 : 0.85;
@@ -163,7 +177,7 @@ class _DiffScrubberPainter extends CustomPainter {
         Offset(x, 0),
         Offset(x, size.height),
         Paint()
-          ..color = const Color(0xFF38BDF8)
+          ..color = isDark ? const Color(0xFF38BDF8) : const Color(0xFF0284C7)
           ..strokeWidth = 2,
       );
     }
@@ -184,6 +198,8 @@ class _DiffScrubberPainter extends CustomPainter {
   bool shouldRepaint(covariant _DiffScrubberPainter oldDelegate) {
     return oldDelegate.records != records ||
         oldDelegate.bucketCount != bucketCount ||
-        oldDelegate.selectedRowIndex != selectedRowIndex;
+        oldDelegate.selectedRowIndex != selectedRowIndex ||
+        oldDelegate.isDark != isDark ||
+        oldDelegate.surfaceColor != surfaceColor;
   }
 }

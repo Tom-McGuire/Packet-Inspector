@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/theme/app_theme.dart';
 import '../../../../domain/models/capture_slot.dart';
 import '../../../../domain/models/packet_diff_record.dart';
 import '../view_models/capture_compare_view_model.dart';
@@ -15,6 +16,9 @@ class DiffPacketTable extends StatefulWidget {
 class _DiffPacketTableState extends State<DiffPacketTable> {
   static const double _rowHeight = 34.0;
   final ScrollController _scrollController = ScrollController();
+
+  Color get _accentColor =>
+      AppTheme.isDark ? const Color(0xFF38BDF8) : AppTheme.accent;
 
   @override
   void dispose() {
@@ -51,15 +55,15 @@ class _DiffPacketTableState extends State<DiffPacketTable> {
     final slots = vm.slots;
 
     if (vm.isLoading) {
-      return const Center(
+      return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            CircularProgressIndicator(color: Color(0xFF38BDF8)),
-            SizedBox(height: 12),
+            CircularProgressIndicator(color: _accentColor),
+            const SizedBox(height: 12),
             Text(
               'Correlating captures across hops...',
-              style: TextStyle(color: Colors.white70, fontSize: 13),
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
             ),
           ],
         ),
@@ -67,10 +71,10 @@ class _DiffPacketTableState extends State<DiffPacketTable> {
     }
 
     if (records.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
           'No packets match the current diff filter.',
-          style: TextStyle(color: Colors.white54, fontSize: 13),
+          style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
         ),
       );
     }
@@ -105,9 +109,9 @@ class _DiffPacketTableState extends State<DiffPacketTable> {
       height: 30,
       padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFF161B22),
+        color: AppTheme.surface,
         border: Border(
-          bottom: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+          bottom: BorderSide(color: AppTheme.border),
         ),
       ),
       child: Row(
@@ -139,10 +143,10 @@ class _DiffPacketTableState extends State<DiffPacketTable> {
   }) {
     final statusColor = _statusColor(record.primaryStatus);
     final bgColor = isSelected
-        ? const Color(0xFF38BDF8).withValues(alpha: 0.16)
+        ? _accentColor.withValues(alpha: 0.16)
         : (record.primaryStatus != DiffStatus.ok
             ? statusColor.withValues(alpha: 0.06)
-            : (isEven ? const Color(0xFF0D1117) : const Color(0xFF11161E)));
+            : (isEven ? AppTheme.scaffoldBg : AppTheme.surfaceHigh));
 
     return InkWell(
       onTap: () => vm.selectRecord(record),
@@ -153,10 +157,10 @@ class _DiffPacketTableState extends State<DiffPacketTable> {
           color: bgColor,
           border: Border(
             left: BorderSide(
-              color: isSelected ? const Color(0xFF38BDF8) : Colors.transparent,
+              color: isSelected ? _accentColor : Colors.transparent,
               width: 3,
             ),
-            bottom: BorderSide(color: Colors.white.withValues(alpha: 0.05)),
+            bottom: BorderSide(color: AppTheme.border),
           ),
         ),
         child: Row(
@@ -165,9 +169,9 @@ class _DiffPacketTableState extends State<DiffPacketTable> {
               width: 54,
               child: Text(
                 '${record.rowIndex + 1}',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: Colors.white54,
+                  color: AppTheme.textMuted,
                   fontFamily: 'monospace',
                 ),
               ),
@@ -177,10 +181,10 @@ class _DiffPacketTableState extends State<DiffPacketTable> {
               child: Text(
                 record.protocolName,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
                   fontWeight: FontWeight.w600,
-                  color: Color(0xFF38BDF8),
+                  color: _accentColor,
                 ),
               ),
             ),
@@ -189,9 +193,9 @@ class _DiffPacketTableState extends State<DiffPacketTable> {
               child: Text(
                 record.flowDisplay,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: Colors.white,
+                  color: AppTheme.textPrimary,
                   fontFamily: 'monospace',
                 ),
               ),
@@ -200,9 +204,9 @@ class _DiffPacketTableState extends State<DiffPacketTable> {
               width: 68,
               child: Text(
                 record.extractedSeq?.toString() ?? '—',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 11,
-                  color: Colors.white70,
+                  color: AppTheme.textSecondary,
                   fontFamily: 'monospace',
                 ),
               ),
@@ -219,8 +223,10 @@ class _DiffPacketTableState extends State<DiffPacketTable> {
                 style: TextStyle(
                   fontSize: 11,
                   color: record.primaryStatus == DiffStatus.latencySpike
-                      ? const Color(0xFFFB923C)
-                      : Colors.white70,
+                      ? (AppTheme.isDark
+                          ? const Color(0xFFFB923C)
+                          : const Color(0xFFC2410C))
+                      : AppTheme.textSecondary,
                   fontFamily: 'monospace',
                 ),
               ),
@@ -261,12 +267,12 @@ class _DiffPacketTableState extends State<DiffPacketTable> {
 
   Widget _buildHopCell(PacketDiffRecord record, HopMatch? match) {
     if (match == null) {
-      return const Text(
+      return Text(
         'MISSING',
         style: TextStyle(
           fontSize: 10,
           fontWeight: FontWeight.w700,
-          color: Color(0xFFEF4444),
+          color: AppTheme.error,
           fontFamily: 'monospace',
         ),
       );
@@ -278,7 +284,9 @@ class _DiffPacketTableState extends State<DiffPacketTable> {
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
         fontSize: 11,
-        color: hasMutation ? const Color(0xFFF59E0B) : Colors.white70,
+        color: hasMutation
+            ? (AppTheme.isDark ? AppTheme.warning : const Color(0xFFB45309))
+            : AppTheme.textSecondary,
         fontFamily: 'monospace',
       ),
     );
@@ -304,13 +312,17 @@ class _DiffPacketTableState extends State<DiffPacketTable> {
 
   Color _statusColor(DiffStatus status) {
     return switch (status) {
-      DiffStatus.ok => const Color(0xFF10B981),
-      DiffStatus.dropped => const Color(0xFFEF4444),
-      DiffStatus.sourceGap => const Color(0xFFF43F5E),
-      DiffStatus.outOfOrder => const Color(0xFFA855F7),
-      DiffStatus.qosVlanMutated => const Color(0xFFF59E0B),
-      DiffStatus.latencySpike => const Color(0xFFFB923C),
-      DiffStatus.injected => const Color(0xFF38BDF8),
+      DiffStatus.ok => AppTheme.success,
+      DiffStatus.dropped => AppTheme.error,
+      DiffStatus.sourceGap =>
+        AppTheme.isDark ? const Color(0xFFF43F5E) : const Color(0xFFE11D48),
+      DiffStatus.outOfOrder =>
+        AppTheme.isDark ? const Color(0xFFA855F7) : const Color(0xFF9333EA),
+      DiffStatus.qosVlanMutated =>
+        AppTheme.isDark ? AppTheme.warning : const Color(0xFFB45309),
+      DiffStatus.latencySpike =>
+        AppTheme.isDark ? const Color(0xFFFB923C) : const Color(0xFFC2410C),
+      DiffStatus.injected => _accentColor,
     };
   }
 }
@@ -325,10 +337,10 @@ class _HeaderText extends StatelessWidget {
     return Text(
       text,
       overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 11,
         fontWeight: FontWeight.w700,
-        color: Colors.white60,
+        color: AppTheme.textSecondary,
       ),
     );
   }

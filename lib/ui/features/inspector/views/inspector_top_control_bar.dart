@@ -1,22 +1,27 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
+
 import '../../../../core/config/feature_flags.dart';
+import '../../../../core/theme/app_theme.dart';
 import '../../compare/view_models/capture_compare_view_model.dart';
 import '../../compare/views/compare_setup_dialog.dart';
-import '../view_models/inspector_view_model.dart';
 import '../../protocol_library/views/custom_library_dialog.dart';
+import '../view_models/inspector_view_model.dart';
 
-class InspectorTopControlBar extends StatelessWidget implements PreferredSizeWidget {
+class InspectorTopControlBar extends StatelessWidget
+    implements PreferredSizeWidget {
   const InspectorTopControlBar({
     super.key,
     required this.onOpenFile,
     required this.onExportSelected,
     this.showAiAssistant = FeatureFlags.enableAiAssistant,
+    this.zone2And3TourKey,
   });
 
   final VoidCallback onOpenFile;
   final ValueChanged<String> onExportSelected;
   final bool showAiAssistant;
+  final GlobalKey? zone2And3TourKey;
 
   @override
   Size get preferredSize => const Size.fromHeight(52);
@@ -25,12 +30,16 @@ class InspectorTopControlBar extends StatelessWidget implements PreferredSizeWid
   Widget build(BuildContext context) {
     final vm = context.watch<InspectorViewModel>();
     final compareVm = Provider.of<CaptureCompareViewModel?>(context);
+    final compareAccent =
+        AppTheme.isDark ? const Color(0xFF38BDF8) : AppTheme.accent;
 
     return Container(
       height: 52,
-      decoration: const BoxDecoration(
-        color: Color(0xFF1E1E1E),
-        border: Border(bottom: BorderSide(color: Color(0xFF2C2C2C), width: 1)),
+      decoration: BoxDecoration(
+        color: AppTheme.surface,
+        border: Border(
+          bottom: BorderSide(color: AppTheme.border, width: 1),
+        ),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -67,13 +76,17 @@ class InspectorTopControlBar extends StatelessWidget implements PreferredSizeWid
                                   color: Colors.indigoAccent.withValues(alpha: 0.2),
                                   borderRadius: BorderRadius.circular(6),
                                 ),
-                                child: const Icon(Icons.radar, color: Colors.indigoAccent, size: 20),
+                                child: const Icon(
+                                  Icons.radar,
+                                  color: Colors.indigoAccent,
+                                  size: 20,
+                                ),
                               ),
                             ),
                           ),
                         ),
                         const SizedBox(width: 10),
-                        const Column(
+                        Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
@@ -83,105 +96,162 @@ class InspectorTopControlBar extends StatelessWidget implements PreferredSizeWid
                                 fontSize: 13,
                                 fontWeight: FontWeight.bold,
                                 letterSpacing: 0.8,
-                                color: Colors.white,
+                                color: AppTheme.textPrimary,
                               ),
                             ),
                             Text(
                               'Deep Packet Inspection & Protocol Dissection',
-                              style: TextStyle(fontSize: 10, color: Colors.white54),
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: AppTheme.textSecondary,
+                              ),
                             ),
                           ],
                         ),
                         const SizedBox(width: 16),
 
-                        // ==================== ZONE 2: TARGET / LOADED FILE ====================
-                        if (vm.loadedFileName != null) ...[
-                          Container(
-                            height: 30,
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.primaryContainer.withValues(alpha: 0.35),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(
-                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.3),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.insert_drive_file_outlined, size: 13),
-                                const SizedBox(width: 4),
-                                ConstrainedBox(
-                                  constraints: const BoxConstraints(maxWidth: 160),
-                                  child: Text(
-                                    vm.loadedFileName!,
-                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-                                    overflow: TextOverflow.ellipsis,
+                        // ==================== ZONE 2 & ZONE 3 ====================
+                        KeyedSubtree(
+                          key: zone2And3TourKey,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (vm.loadedFileName != null) ...[
+                                Container(
+                                  height: 30,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 8,
+                                    vertical: 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: Theme.of(context)
+                                        .colorScheme
+                                        .primaryContainer
+                                        .withValues(alpha: 0.35),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: Theme.of(context)
+                                          .colorScheme
+                                          .primary
+                                          .withValues(alpha: 0.3),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.insert_drive_file_outlined,
+                                        size: 13,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      ConstrainedBox(
+                                        constraints: const BoxConstraints(
+                                          maxWidth: 160,
+                                        ),
+                                        child: Text(
+                                          vm.loadedFileName!,
+                                          style: const TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
+                                const SizedBox(width: 12),
                               ],
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                        ],
 
-                        // ==================== ZONE 3: PRIMARY ACTIONS ====================
-                        FilledButton.icon(
-                          onPressed: () {
-                            compareVm?.exitCompareMode();
-                            onOpenFile();
-                          },
-                          icon: const Icon(Icons.folder_open, size: 16),
-                          label: const Text(
-                            'Open PCAP',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                          ),
-                          style: FilledButton.styleFrom(
-                            backgroundColor: const Color(0xFF10B981), // Emerald green (from ARP Scout)
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                              // ==================== ZONE 3: PRIMARY ACTIONS ====================
+                              FilledButton.icon(
+                                onPressed: () {
+                                  compareVm?.exitCompareMode();
+                                  onOpenFile();
+                                },
+                                icon: const Icon(Icons.folder_open, size: 16),
+                                label: const Text(
+                                  'Open PCAP',
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                                style: FilledButton.styleFrom(
+                                  backgroundColor: AppTheme.success,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 14,
+                                    vertical: 10,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              if (compareVm != null) ...[
+                                OutlinedButton.icon(
+                                  onPressed: () => showDialog<bool>(
+                                    context: context,
+                                    builder: (_) => const CompareSetupDialog(),
+                                  ),
+                                  icon: const Icon(
+                                    Icons.compare_arrows_rounded,
+                                    size: 16,
+                                  ),
+                                  label: Text(
+                                    compareVm.isCompareMode
+                                        ? 'Re-Compare'
+                                        : 'Compare PCAPs',
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.w600,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: compareAccent,
+                                    side: BorderSide(
+                                      color: compareAccent.withValues(alpha: 0.55),
+                                    ),
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 10,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                  ),
+                                ),
+                                if (compareVm.isCompareMode) ...[
+                                  const SizedBox(width: 8),
+                                  FilledButton.icon(
+                                    onPressed: compareVm.exitCompareMode,
+                                    icon: const Icon(Icons.close_rounded, size: 15),
+                                    label: const Text(
+                                      'Exit Compare',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                    style: FilledButton.styleFrom(
+                                      backgroundColor: AppTheme.error,
+                                      foregroundColor: Colors.white,
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 10,
+                                      ),
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ],
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        if (compareVm != null) ...[
-                          OutlinedButton.icon(
-                            onPressed: () => showDialog<bool>(
-                              context: context,
-                              builder: (_) => const CompareSetupDialog(),
-                            ),
-                            icon: const Icon(Icons.compare_arrows_rounded, size: 16),
-                            label: Text(
-                              compareVm.isCompareMode ? 'Re-Compare' : 'Compare PCAPs',
-                              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF38BDF8),
-                              side: BorderSide(
-                                color: const Color(0xFF38BDF8).withValues(alpha: 0.45),
-                              ),
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                            ),
-                          ),
-                          if (compareVm.isCompareMode) ...[
-                            const SizedBox(width: 8),
-                            FilledButton.icon(
-                              onPressed: compareVm.exitCompareMode,
-                              icon: const Icon(Icons.close_rounded, size: 15),
-                              label: const Text(
-                                'Exit Compare',
-                                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                              ),
-                              style: FilledButton.styleFrom(
-                                backgroundColor: const Color(0xFFEF4444),
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-                              ),
-                            ),
-                          ],
-                        ],
                       ],
                     ),
 
@@ -195,12 +265,40 @@ class InspectorTopControlBar extends StatelessWidget implements PreferredSizeWid
                       children: [
                         // ==================== ZONE 4: ECOSYSTEM & DEMO ====================
                         OutlinedButton.icon(
-                          onPressed: () => vm.loadDemoCapture(),
-                          icon: const Icon(Icons.play_circle_outline, size: 15),
-                          label: const Text('Load Demo', style: TextStyle(fontSize: 11)),
+                          onPressed: vm.isDemoMode
+                              ? () => vm.endDemoWalkthrough()
+                              : () {
+                                  compareVm?.exitCompareMode();
+                                  vm.startDemoWalkthrough();
+                                },
+                          icon: Icon(
+                            vm.isDemoMode
+                                ? Icons.stop_circle_outlined
+                                : Icons.play_circle_outline,
+                            size: 15,
+                            color: vm.isDemoMode ? AppTheme.warning : null,
+                          ),
+                          label: Text(
+                            vm.isDemoMode ? 'Exit Demo' : 'Load Demo',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: vm.isDemoMode ? AppTheme.warning : null,
+                              fontWeight: vm.isDemoMode
+                                  ? FontWeight.w600
+                                  : FontWeight.normal,
+                            ),
+                          ),
                           style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            side: vm.isDemoMode
+                                ? BorderSide(color: AppTheme.warning)
+                                : null,
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -210,10 +308,18 @@ class InspectorTopControlBar extends StatelessWidget implements PreferredSizeWid
                             builder: (ctx) => CustomLibraryDialog(viewModel: vm),
                           ),
                           icon: const Icon(Icons.menu_book, size: 15),
-                          label: const Text('Custom Library', style: TextStyle(fontSize: 11)),
+                          label: const Text(
+                            'Custom Library',
+                            style: TextStyle(fontSize: 11),
+                          ),
                           style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
                           ),
                         ),
                         if (showAiAssistant) ...[
@@ -221,12 +327,21 @@ class InspectorTopControlBar extends StatelessWidget implements PreferredSizeWid
                           FilledButton.icon(
                             onPressed: () => vm.toggleAiPanel(),
                             style: FilledButton.styleFrom(
-                              backgroundColor: vm.isAiPanelOpen ? Colors.purple : null,
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                              backgroundColor:
+                                  vm.isAiPanelOpen ? Colors.purple : null,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 8,
+                              ),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(6),
+                              ),
                             ),
                             icon: const Icon(Icons.auto_awesome, size: 15),
-                            label: const Text('AI Assistant', style: TextStyle(fontSize: 11)),
+                            label: const Text(
+                              'AI Assistant',
+                              style: TextStyle(fontSize: 11),
+                            ),
                           ),
                         ],
                         const SizedBox(width: 8),
@@ -242,8 +357,13 @@ class InspectorTopControlBar extends StatelessWidget implements PreferredSizeWid
                           icon: const Icon(Icons.delete_sweep_outlined, size: 15),
                           label: const Text('Clear', style: TextStyle(fontSize: 11)),
                           style: OutlinedButton.styleFrom(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 8,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -273,18 +393,35 @@ class InspectorTopControlBar extends StatelessWidget implements PreferredSizeWid
                             ),
                           ],
                           child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 7,
+                            ),
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFF2C2C2C)),
+                              border: Border.all(color: AppTheme.border),
                             ),
-                            child: const Row(
+                            child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                Icon(Icons.download, size: 15, color: Colors.white70),
-                                SizedBox(width: 6),
-                                Text('Export', style: TextStyle(fontSize: 11, color: Colors.white70)),
-                                Icon(Icons.arrow_drop_down, size: 14, color: Colors.white70),
+                                Icon(
+                                  Icons.download,
+                                  size: 15,
+                                  color: AppTheme.textSecondary,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  'Export',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: AppTheme.textSecondary,
+                                  ),
+                                ),
+                                Icon(
+                                  Icons.arrow_drop_down,
+                                  size: 14,
+                                  color: AppTheme.textSecondary,
+                                ),
                               ],
                             ),
                           ),

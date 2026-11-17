@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 
+import '../../../../core/theme/app_theme.dart';
 import '../../../../data/services/diff/multi_capture_diff_engine.dart';
 import '../../../../domain/models/custom_protocol_rule.dart';
 import '../../inspector/view_models/inspector_view_model.dart';
@@ -177,32 +178,35 @@ class _CompareSetupDialogState extends State<CompareSetupDialog> {
     Navigator.of(context).pop(true);
   }
 
+  Color get _accentColor =>
+      AppTheme.isDark ? const Color(0xFF38BDF8) : AppTheme.accent;
+
   @override
   Widget build(BuildContext context) {
     final readyCount = _slots.where((s) => s.bytes != null).length;
 
     return AlertDialog(
-      backgroundColor: const Color(0xFF161B22),
+      backgroundColor: AppTheme.surface,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+        side: BorderSide(color: AppTheme.border),
       ),
       title: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(6),
             decoration: BoxDecoration(
-              color: const Color(0xFF38BDF8).withValues(alpha: 0.15),
+              color: _accentColor.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(6),
             ),
-            child: const Icon(
+            child: Icon(
               Icons.compare_arrows_rounded,
-              color: Color(0xFF38BDF8),
+              color: _accentColor,
               size: 18,
             ),
           ),
           const SizedBox(width: 10),
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -211,7 +215,7 @@ class _CompareSetupDialogState extends State<CompareSetupDialog> {
                   style: TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
-                    color: Colors.white,
+                    color: AppTheme.textPrimary,
                   ),
                 ),
                 Text(
@@ -219,7 +223,7 @@ class _CompareSetupDialogState extends State<CompareSetupDialog> {
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.normal,
-                    color: Colors.white54,
+                    color: AppTheme.textSecondary,
                   ),
                 ),
               ],
@@ -246,7 +250,7 @@ class _CompareSetupDialogState extends State<CompareSetupDialog> {
                     icon: const Icon(Icons.add_rounded, size: 16),
                     label: Text('Add Hop (${_slots.length}/4)'),
                     style: TextButton.styleFrom(
-                      foregroundColor: const Color(0xFF38BDF8),
+                      foregroundColor: _accentColor,
                     ),
                   ),
                 ),
@@ -255,16 +259,18 @@ class _CompareSetupDialogState extends State<CompareSetupDialog> {
                 Container(
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFEF4444).withValues(alpha: 0.12),
+                    color: AppTheme.error.withValues(alpha: 0.12),
                     borderRadius: BorderRadius.circular(6),
                     border: Border.all(
-                      color: const Color(0xFFEF4444).withValues(alpha: 0.35),
+                      color: AppTheme.error.withValues(alpha: 0.35),
                     ),
                   ),
                   child: Text(
                     _error!,
-                    style: const TextStyle(
-                      color: Color(0xFFFCA5A5),
+                    style: TextStyle(
+                      color: AppTheme.isDark
+                          ? const Color(0xFFFCA5A5)
+                          : AppTheme.error,
                       fontSize: 12,
                     ),
                   ),
@@ -280,12 +286,15 @@ class _CompareSetupDialogState extends State<CompareSetupDialog> {
           icon: const Icon(Icons.auto_fix_high_rounded, size: 15),
           label: const Text('Load Synthetic Demo Diff'),
           style: TextButton.styleFrom(
-            foregroundColor: const Color(0xFFF59E0B),
+            foregroundColor: AppTheme.warning,
           ),
         ),
         TextButton(
           onPressed: _isBusy ? null : () => Navigator.of(context).pop(false),
-          child: const Text('Cancel', style: TextStyle(color: Colors.white70)),
+          child: Text(
+            'Cancel',
+            style: TextStyle(color: AppTheme.textSecondary),
+          ),
         ),
         ElevatedButton.icon(
           onPressed: (_isBusy || readyCount < 2) ? null : _runComparison,
@@ -301,7 +310,7 @@ class _CompareSetupDialogState extends State<CompareSetupDialog> {
               : const Icon(Icons.play_arrow_rounded, size: 16),
           label: Text(_isBusy ? 'Correlating...' : 'Compare ($readyCount Hops)'),
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF10B981),
+            backgroundColor: AppTheme.success,
             foregroundColor: Colors.white,
           ),
         ),
@@ -317,12 +326,12 @@ class _CompareSetupDialogState extends State<CompareSetupDialog> {
     return Container(
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFF0D1117),
+        color: AppTheme.scaffoldBg,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: isBaseline
-              ? const Color(0xFF38BDF8).withValues(alpha: 0.35)
-              : Colors.white.withValues(alpha: 0.08),
+              ? _accentColor.withValues(alpha: 0.35)
+              : AppTheme.border,
         ),
       ),
       child: Row(
@@ -333,8 +342,8 @@ class _CompareSetupDialogState extends State<CompareSetupDialog> {
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: isBaseline
-                  ? const Color(0xFF38BDF8).withValues(alpha: 0.2)
-                  : Colors.white.withValues(alpha: 0.08),
+                  ? _accentColor.withValues(alpha: 0.2)
+                  : AppTheme.border,
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(
@@ -342,7 +351,7 @@ class _CompareSetupDialogState extends State<CompareSetupDialog> {
               style: TextStyle(
                 fontWeight: FontWeight.w700,
                 fontSize: 12,
-                color: isBaseline ? const Color(0xFF38BDF8) : Colors.white70,
+                color: isBaseline ? _accentColor : AppTheme.textSecondary,
               ),
             ),
           ),
@@ -352,18 +361,21 @@ class _CompareSetupDialogState extends State<CompareSetupDialog> {
             child: TextField(
               controller: slot.labelController,
               enabled: !_isBusy,
-              style: const TextStyle(color: Colors.white, fontSize: 12),
+              style: TextStyle(color: AppTheme.textPrimary, fontSize: 12),
               decoration: InputDecoration(
                 isDense: true,
                 labelText: isBaseline ? 'Baseline Label' : 'Hop ${index + 1} Label',
-                labelStyle: const TextStyle(color: Colors.white54, fontSize: 11),
+                labelStyle: TextStyle(
+                  color: AppTheme.textSecondary,
+                  fontSize: 11,
+                ),
                 contentPadding: const EdgeInsets.symmetric(
                   horizontal: 10,
                   vertical: 8,
                 ),
                 border: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(6),
-                  borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.12)),
+                  borderSide: BorderSide(color: AppTheme.border),
                 ),
               ),
             ),
@@ -376,21 +388,23 @@ class _CompareSetupDialogState extends State<CompareSetupDialog> {
               icon: Icon(
                 hasFile ? Icons.check_circle_rounded : Icons.folder_open_rounded,
                 size: 14,
-                color: hasFile ? const Color(0xFF10B981) : Colors.white70,
+                color: hasFile ? AppTheme.success : AppTheme.textSecondary,
               ),
               label: Text(
                 slot.fileName ?? 'Select PCAP...',
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(
                   fontSize: 12,
-                  color: hasFile ? Colors.white : Colors.white70,
+                  color: hasFile
+                      ? AppTheme.textPrimary
+                      : AppTheme.textSecondary,
                 ),
               ),
               style: OutlinedButton.styleFrom(
                 side: BorderSide(
                   color: hasFile
-                      ? const Color(0xFF10B981).withValues(alpha: 0.5)
-                      : Colors.white.withValues(alpha: 0.18),
+                      ? AppTheme.success.withValues(alpha: 0.5)
+                      : AppTheme.border,
                 ),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
               ),
@@ -401,7 +415,7 @@ class _CompareSetupDialogState extends State<CompareSetupDialog> {
             IconButton(
               onPressed: _isBusy ? null : () => _removeSlot(index),
               icon: const Icon(Icons.close_rounded, size: 16),
-              color: Colors.white54,
+              color: AppTheme.textSecondary,
               tooltip: 'Remove hop',
               constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
               padding: EdgeInsets.zero,
