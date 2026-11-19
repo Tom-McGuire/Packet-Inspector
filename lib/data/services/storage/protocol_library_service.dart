@@ -1,50 +1,67 @@
 import 'dart:io';
 import 'dart:convert';
+import 'package:path/path.dart' as p;
 import '../../../domain/models/custom_protocol_rule.dart';
 import '../../../domain/models/baseline_profile.dart';
 import '../../../domain/models/endpoint_rule.dart';
+import 'shared_device_database.dart';
 
 class ProtocolLibraryService {
   ProtocolLibraryService({this.storageDirectory});
 
   final Directory? storageDirectory;
 
-  File _resolveFile(String filename) {
+  static const String _protocolsFileName = 'custom_protocols.json';
+  static const String _baselinesFileName = 'baseline_profiles.json';
+  static const String _sendersFileName = 'sender_library.json';
+  static const String _receiversFileName = 'receiver_library.json';
+
+  /// Canonical writable file path for a library JSON [filename].
+  String resolveWritePath(String filename) => _resolveWriteFile(filename).path;
+
+  File _resolveWriteFile(String filename) {
     if (storageDirectory != null) {
-      return File('${storageDirectory!.path}/$filename');
+      return File(p.join(storageDirectory!.path, filename));
     }
-    // 1. Current working directory
-    final cwdFile = File('./$filename');
+    return File(
+      p.join(SharedDeviceDatabase.getDefaultDirectoryPath(), filename),
+    );
+  }
+
+  File _resolveReadFile(String filename) {
+    if (storageDirectory != null) {
+      return File(p.join(storageDirectory!.path, filename));
+    }
+
+    // 1. Canonical cross-platform user data directory
+    final userFile = File(
+      p.join(SharedDeviceDatabase.getDefaultDirectoryPath(), filename),
+    );
+    if (userFile.existsSync()) return userFile;
+
+    // 2. Legacy read-only fallback for v0.6.0 upgrades
+    final cwdFile = File(p.join('.', filename));
     if (cwdFile.existsSync()) return cwdFile;
 
-    // 2. Next to executable
     try {
       final exeDir = File(Platform.resolvedExecutable).parent;
-      final exeFile = File('${exeDir.path}/$filename');
+      final exeFile = File(p.join(exeDir.path, filename));
       if (exeFile.existsSync()) return exeFile;
     } catch (_) {}
 
-    // 3. Release build path if running in project directory
-    final releaseFile = File('build/windows/x64/runner/Release/$filename');
+    final releaseFile = File(
+      p.join('build', 'windows', 'x64', 'runner', 'Release', filename),
+    );
     if (releaseFile.existsSync()) return releaseFile;
 
-    try {
-      final exeDir = File(Platform.resolvedExecutable).parent;
-      return File('${exeDir.path}/$filename');
-    } catch (_) {
-      return cwdFile;
-    }
+    return userFile;
   }
-
-  File get _protocolsFile => _resolveFile('custom_protocols.json');
-  File get _baselinesFile => _resolveFile('baseline_profiles.json');
-  File get _sendersFile => _resolveFile('sender_library.json');
-  File get _receiversFile => _resolveFile('receiver_library.json');
 
   List<CustomProtocolRule> loadCustomProtocols() {
     try {
-      if (_protocolsFile.existsSync()) {
-        final content = _protocolsFile.readAsStringSync();
+      final file = _resolveReadFile(_protocolsFileName);
+      if (file.existsSync()) {
+        final content = file.readAsStringSync();
         return CustomProtocolRule.deserializeList(content);
       }
     } catch (_) {}
@@ -53,15 +70,20 @@ class ProtocolLibraryService {
 
   void saveCustomProtocols(List<CustomProtocolRule> rules) {
     try {
+      final file = _resolveWriteFile(_protocolsFileName);
+      if (!file.parent.existsSync()) {
+        file.parent.createSync(recursive: true);
+      }
       final jsonStr = CustomProtocolRule.serializeList(rules);
-      _protocolsFile.writeAsStringSync(jsonStr);
+      file.writeAsStringSync(jsonStr);
     } catch (_) {}
   }
 
   BaselineProfile loadBaselineProfile() {
     try {
-      if (_baselinesFile.existsSync()) {
-        final content = _baselinesFile.readAsStringSync();
+      final file = _resolveReadFile(_baselinesFileName);
+      if (file.existsSync()) {
+        final content = file.readAsStringSync();
         return BaselineProfile.deserialize(content);
       }
     } catch (_) {}
@@ -74,21 +96,20 @@ class ProtocolLibraryService {
 
   void saveBaselineProfile(BaselineProfile profile) {
     try {
+      final file = _resolveWriteFile(_baselinesFileName);
+      if (!file.parent.existsSync()) {
+        file.parent.createSync(recursive: true);
+      }
       final jsonStr = BaselineProfile.serialize(profile);
-      _baselinesFile.writeAsStringSync(jsonStr);
+      file.writeAsStringSync(jsonStr);
     } catch (_) {}
   }
 
-  String exportProtocolsJson(List<CustomProtocolRule> rules) =>
-      CustomProtocolRule.serializeList(rules);
-
-  List<CustomProtocolRule> importProtocolsJson(String jsonStr) =>
-      CustomProtocolRule.deserializeList(jsonStr);
-
   List<EndpointRule> loadSenders() {
     try {
-      if (_sendersFile.existsSync()) {
-        final content = _sendersFile.readAsStringSync();
+      final file = _resolveReadFile(_sendersFileName);
+      if (file.existsSync()) {
+        final content = file.readAsStringSync();
         return EndpointRule.deserializeList(content);
       }
     } catch (_) {}
@@ -97,15 +118,20 @@ class ProtocolLibraryService {
 
   void saveSenders(List<EndpointRule> senders) {
     try {
+      final file = _resolveWriteFile(_sendersFileName);
+      if (!file.parent.existsSync()) {
+        file.parent.createSync(recursive: true);
+      }
       final jsonStr = EndpointRule.serializeList(senders);
-      _sendersFile.writeAsStringSync(jsonStr);
+      file.writeAsStringSync(jsonStr);
     } catch (_) {}
   }
 
   List<EndpointRule> loadReceivers() {
     try {
-      if (_receiversFile.existsSync()) {
-        final content = _receiversFile.readAsStringSync();
+      final file = _resolveReadFile(_receiversFileName);
+      if (file.existsSync()) {
+        final content = file.readAsStringSync();
         return EndpointRule.deserializeList(content);
       }
     } catch (_) {}
@@ -114,8 +140,12 @@ class ProtocolLibraryService {
 
   void saveReceivers(List<EndpointRule> receivers) {
     try {
+      final file = _resolveWriteFile(_receiversFileName);
+      if (!file.parent.existsSync()) {
+        file.parent.createSync(recursive: true);
+      }
       final jsonStr = EndpointRule.serializeList(receivers);
-      _receiversFile.writeAsStringSync(jsonStr);
+      file.writeAsStringSync(jsonStr);
     } catch (_) {}
   }
 

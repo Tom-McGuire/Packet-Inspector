@@ -41,7 +41,6 @@ class MultiCaptureDiffEngine {
   List<FlowDiffSummary> _flowSummaries = const [];
   Set<int> _sharedFlowHashes = const {};
 
-  Database get database => _db;
   List<CaptureSlot> get slots => _slots;
   List<FlowDiffSummary> get flowSummaries => _flowSummaries;
 

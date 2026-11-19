@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:sqlite3/sqlite3.dart';
 import '../../../domain/models/packet_record.dart';
@@ -105,7 +106,10 @@ class PacketDatabaseService {
         summary TEXT NOT NULL,
         triage_status TEXT NOT NULL,
         is_lan_noise INTEGER NOT NULL,
-        custom_protocol_id TEXT
+        custom_protocol_id TEXT,
+        base_protocol TEXT,
+        base_summary TEXT,
+        custom_fields_json TEXT
       );
 
       CREATE INDEX IF NOT EXISTS idx_packets_ts ON packets(timestamp_us);
@@ -160,9 +164,10 @@ class PacketDatabaseService {
           flow_hash, eth_type, src_ip, dst_ip, ip_proto,
           src_port, dst_port, detected_protocol, captured_length, original_length,
           file_byte_offset, payload_file_offset, payload_length,
-          payload_preview, summary, triage_status, is_lan_noise, custom_protocol_id
+          payload_preview, summary, triage_status, is_lan_noise, custom_protocol_id,
+          base_protocol, base_summary, custom_fields_json
         ) VALUES (
-          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+          ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
         )
       ''');
 
@@ -190,6 +195,9 @@ class PacketDatabaseService {
           p.triageStatus.name,
           p.isLanNoise ? 1 : 0,
           p.customProtocolId,
+          p.baseProtocol ?? p.detectedProtocol,
+          p.baseSummary ?? p.summary,
+          p.customFields.isEmpty ? null : jsonEncode(p.customFields),
         ]);
       }
       stmt.close();
@@ -266,9 +274,9 @@ class PacketDatabaseService {
         total_bytes, min_global_delta_us, max_stream_delta_us, avg_stream_delta_us, unexpected_count
       )
       SELECT
-        CAST((timestamp_us - $minTs) / $bucketWidthUs AS INTEGER) AS b_idx,
-        $minTs + (CAST((timestamp_us - $minTs) / $bucketWidthUs AS INTEGER) * $bucketWidthUs),
-        $minTs + ((CAST((timestamp_us - $minTs) / $bucketWidthUs AS INTEGER) + 1) * $bucketWidthUs),
+        CAST((timestamp_us - ?) / ? AS INTEGER) AS b_idx,
+        ? + (CAST((timestamp_us - ?) / ? AS INTEGER) * ?),
+        ? + ((CAST((timestamp_us - ?) / ? AS INTEGER) + 1) * ?),
         COUNT(*),
         SUM(captured_length),
         MIN(global_delta_us),
@@ -278,7 +286,50 @@ class PacketDatabaseService {
       FROM packets
       GROUP BY b_idx
       ORDER BY b_idx ASC
-    ''');
+    ''', [
+      minTs,
+      bucketWidthUs,
+      minTs,
+      minTs,
+      bucketWidthUs,
+      bucketWidthUs,
+      minTs,
+      minTs,
+      bucketWidthUs,
+      bucketWidthUs,
+    ]);
+  }
+
+  static final RegExp _ipv6HextetPattern = RegExp(r'^[0-9a-fA-F]{1,4}$');
+
+  ({String ip, int? port}) _parseEndpointKey(String key) {
+    if (key.startsWith('[')) {
+      final closeIdx = key.indexOf(']:');
+      if (closeIdx > 1) {
+        final port = int.tryParse(key.substring(closeIdx + 2));
+        if (port != null) {
+          return (ip: key.substring(1, closeIdx), port: port);
+        }
+      }
+      return (ip: key, port: null);
+    }
+
+    if (key.contains(':')) {
+      final parts = key.split(':');
+      if (parts.length == 2) {
+        final port = int.tryParse(parts[1]);
+        if (port != null) {
+          return (ip: parts[0], port: port);
+        }
+      } else if (parts.length == 9 &&
+          parts.sublist(0, 8).every(_ipv6HextetPattern.hasMatch)) {
+        final port = int.tryParse(parts[8]);
+        if (port != null) {
+          return (ip: parts.sublist(0, 8).join(':'), port: port);
+        }
+      }
+    }
+    return (ip: key, port: null);
   }
 
   void _appendEndpointFilter(
@@ -292,19 +343,15 @@ class PacketDatabaseService {
     if (filters.isEmpty) return;
     final subClauses = <String>[];
     for (final f in filters) {
-      if (f.contains(':')) {
-        final parts = f.split(':');
-        final ip = parts[0];
-        final port = int.tryParse(parts[1]);
-        if (port != null) {
-          subClauses.add('($ipCol = ? AND $portCol = ?)');
-          params.add(ip);
-          params.add(port);
-          continue;
-        }
+      final parsed = _parseEndpointKey(f);
+      if (parsed.port != null) {
+        subClauses.add('($ipCol = ? AND $portCol = ?)');
+        params.add(parsed.ip);
+        params.add(parsed.port);
+      } else {
+        subClauses.add('$ipCol = ?');
+        params.add(parsed.ip);
       }
-      subClauses.add('$ipCol = ?');
-      params.add(f);
     }
     if (subClauses.isNotEmpty) {
       final joined = subClauses.join(' OR ');
@@ -317,7 +364,6 @@ class PacketDatabaseService {
   }
 
   (String, List<dynamic>) _buildWhereClauseAndParams({
-    bool isTriageMode = true,
     Set<TriageStatus> triageStatuses = const {
       TriageStatus.expected,
       TriageStatus.unclassified,
@@ -347,12 +393,13 @@ class PacketDatabaseService {
       if (!isTriageNot && triageStatuses.length >= 3) {
         // all 3 statuses selected positive -> match all, no restriction
       } else {
-        final statusNames = triageStatuses.map((s) => "'${s.name}'").join(',');
+        final placeholders = List.filled(triageStatuses.length, '?').join(',');
         if (isTriageNot) {
-          whereClauses.add('triage_status NOT IN ($statusNames)');
+          whereClauses.add('triage_status NOT IN ($placeholders)');
         } else {
-          whereClauses.add('triage_status IN ($statusNames)');
+          whereClauses.add('triage_status IN ($placeholders)');
         }
+        params.addAll(triageStatuses.map((s) => s.name));
       }
     }
 
@@ -364,26 +411,15 @@ class PacketDatabaseService {
     // 3. Source IP Search Box
     final trimmedSrc = sourceSearch.trim();
     if (trimmedSrc.isNotEmpty) {
-      if (trimmedSrc.contains(':')) {
-        final parts = trimmedSrc.split(':');
-        final ipPart = parts[0];
-        final portPart = int.tryParse(parts[1]);
-        if (portPart != null) {
-          if (isSourceSearchNot) {
-            whereClauses.add('NOT (src_ip LIKE ? AND src_port = ?)');
-          } else {
-            whereClauses.add('(src_ip LIKE ? AND src_port = ?)');
-          }
-          params.add('%$ipPart%');
-          params.add(portPart);
+      final parsedSrc = _parseEndpointKey(trimmedSrc);
+      if (parsedSrc.port != null) {
+        if (isSourceSearchNot) {
+          whereClauses.add('NOT (src_ip LIKE ? AND src_port = ?)');
         } else {
-          if (isSourceSearchNot) {
-            whereClauses.add('src_ip NOT LIKE ?');
-          } else {
-            whereClauses.add('src_ip LIKE ?');
-          }
-          params.add('%$trimmedSrc%');
+          whereClauses.add('(src_ip LIKE ? AND src_port = ?)');
         }
+        params.add('%${parsedSrc.ip}%');
+        params.add(parsedSrc.port);
       } else {
         if (isSourceSearchNot) {
           whereClauses.add('src_ip NOT LIKE ?');
@@ -397,26 +433,15 @@ class PacketDatabaseService {
     // 4. Destination IP Search Box
     final trimmedDst = destSearch.trim();
     if (trimmedDst.isNotEmpty) {
-      if (trimmedDst.contains(':')) {
-        final parts = trimmedDst.split(':');
-        final ipPart = parts[0];
-        final portPart = int.tryParse(parts[1]);
-        if (portPart != null) {
-          if (isDestSearchNot) {
-            whereClauses.add('NOT (dst_ip LIKE ? AND dst_port = ?)');
-          } else {
-            whereClauses.add('(dst_ip LIKE ? AND dst_port = ?)');
-          }
-          params.add('%$ipPart%');
-          params.add(portPart);
+      final parsedDst = _parseEndpointKey(trimmedDst);
+      if (parsedDst.port != null) {
+        if (isDestSearchNot) {
+          whereClauses.add('NOT (dst_ip LIKE ? AND dst_port = ?)');
         } else {
-          if (isDestSearchNot) {
-            whereClauses.add('dst_ip NOT LIKE ?');
-          } else {
-            whereClauses.add('dst_ip LIKE ?');
-          }
-          params.add('%$trimmedDst%');
+          whereClauses.add('(dst_ip LIKE ? AND dst_port = ?)');
         }
+        params.add('%${parsedDst.ip}%');
+        params.add(parsedDst.port);
       } else {
         if (isDestSearchNot) {
           whereClauses.add('dst_ip NOT LIKE ?');
@@ -469,7 +494,6 @@ class PacketDatabaseService {
   List<PacketRecord> queryPackets({
     int offset = 0,
     int limit = 100,
-    bool isTriageMode = true,
     Set<TriageStatus> triageStatuses = const {
       TriageStatus.expected,
       TriageStatus.unclassified,
@@ -494,7 +518,6 @@ class PacketDatabaseService {
     bool sortAscending = true,
   }) {
     final (whereSql, params) = _buildWhereClauseAndParams(
-      isTriageMode: isTriageMode,
       triageStatuses: triageStatuses,
       isTriageNot: isTriageNot,
       silenceLanChatter: silenceLanChatter,
@@ -551,7 +574,6 @@ class PacketDatabaseService {
   }
 
   int getPacketCount({
-    bool isTriageMode = true,
     Set<TriageStatus> triageStatuses = const {
       TriageStatus.expected,
       TriageStatus.unclassified,
@@ -574,7 +596,6 @@ class PacketDatabaseService {
     int? timeEndUs,
   }) {
     final (whereSql, params) = _buildWhereClauseAndParams(
-      isTriageMode: isTriageMode,
       triageStatuses: triageStatuses,
       isTriageNot: isTriageNot,
       silenceLanChatter: silenceLanChatter,
@@ -610,7 +631,6 @@ class PacketDatabaseService {
   }
 
   Map<String, int> queryProtocolCounts({
-    bool isTriageMode = true,
     Set<TriageStatus> triageStatuses = const {
       TriageStatus.expected,
       TriageStatus.unclassified,
@@ -631,7 +651,6 @@ class PacketDatabaseService {
     int? timeEndUs,
   }) {
     final (whereSql, params) = _buildWhereClauseAndParams(
-      isTriageMode: isTriageMode,
       triageStatuses: triageStatuses,
       isTriageNot: isTriageNot,
       silenceLanChatter: silenceLanChatter,
@@ -667,7 +686,6 @@ class PacketDatabaseService {
 
   Map<String, int> queryTopSenders({
     int limit = 15,
-    bool isTriageMode = true,
     Set<TriageStatus> triageStatuses = const {
       TriageStatus.expected,
       TriageStatus.unclassified,
@@ -686,7 +704,6 @@ class PacketDatabaseService {
     int? timeEndUs,
   }) {
     final (whereSql, params) = _buildWhereClauseAndParams(
-      isTriageMode: isTriageMode,
       triageStatuses: triageStatuses,
       isTriageNot: isTriageNot,
       silenceLanChatter: silenceLanChatter,
@@ -711,8 +728,9 @@ class PacketDatabaseService {
       $whereSql
       GROUP BY src_ip
       ORDER BY cnt DESC
-      LIMIT $limit
+      LIMIT ?
     ''';
+    params.add(limit);
     final rows = _db.select(sql, params);
     final counts = <String, int>{};
     for (final r in rows) {
@@ -723,7 +741,6 @@ class PacketDatabaseService {
 
   Map<String, int> queryTopReceivers({
     int limit = 15,
-    bool isTriageMode = true,
     Set<TriageStatus> triageStatuses = const {
       TriageStatus.expected,
       TriageStatus.unclassified,
@@ -742,7 +759,6 @@ class PacketDatabaseService {
     int? timeEndUs,
   }) {
     final (whereSql, params) = _buildWhereClauseAndParams(
-      isTriageMode: isTriageMode,
       triageStatuses: triageStatuses,
       isTriageNot: isTriageNot,
       silenceLanChatter: silenceLanChatter,
@@ -767,8 +783,9 @@ class PacketDatabaseService {
       $whereSql
       GROUP BY dst_ip
       ORDER BY cnt DESC
-      LIMIT $limit
+      LIMIT ?
     ''';
+    params.add(limit);
     final rows = _db.select(sql, params);
     final counts = <String, int>{};
     for (final r in rows) {
@@ -781,7 +798,6 @@ class PacketDatabaseService {
     required String ip,
     int? port,
     required bool isSender,
-    bool isTriageMode = true,
     Set<TriageStatus> triageStatuses = const {
       TriageStatus.expected,
       TriageStatus.unclassified,
@@ -804,7 +820,6 @@ class PacketDatabaseService {
     int? timeEndUs,
   }) {
     final (whereSql, params) = _buildWhereClauseAndParams(
-      isTriageMode: isTriageMode,
       triageStatuses: triageStatuses,
       isTriageNot: isTriageNot,
       silenceLanChatter: silenceLanChatter,
@@ -834,6 +849,112 @@ class PacketDatabaseService {
     return (rows.firstOrNull?['cnt'] as int?) ?? 0;
   }
 
+  Map<String, int> countPacketsForEndpoints({
+    required Iterable<String> endpointKeys,
+    required bool isSender,
+    Set<TriageStatus> triageStatuses = const {
+      TriageStatus.expected,
+      TriageStatus.unclassified,
+      TriageStatus.unexpected,
+    },
+    bool isTriageNot = false,
+    bool silenceLanChatter = false,
+    String sourceSearch = '',
+    bool isSourceSearchNot = false,
+    String destSearch = '',
+    bool isDestSearchNot = false,
+    Set<String> protocolPills = const {},
+    bool isProtocolNot = false,
+    Set<String> senderFilters = const {},
+    bool isSenderNot = false,
+    Set<String> receiverFilters = const {},
+    bool isReceiverNot = false,
+    Set<String> ipFilters = const {},
+    int? timeStartUs,
+    int? timeEndUs,
+  }) {
+    final uniqueKeys = endpointKeys.toSet();
+    final result = <String, int>{for (final k in uniqueKeys) k: 0};
+    if (uniqueKeys.isEmpty) return result;
+
+    final ipOnlyKeys = <String>{};
+    final ipPortFilters = <({String key, String ip, int port})>[];
+    for (final key in uniqueKeys) {
+      final parsed = _parseEndpointKey(key);
+      if (parsed.port != null) {
+        ipPortFilters.add((key: key, ip: parsed.ip, port: parsed.port!));
+      } else {
+        ipOnlyKeys.add(parsed.ip);
+      }
+    }
+
+    final (whereSql, params) = _buildWhereClauseAndParams(
+      triageStatuses: triageStatuses,
+      isTriageNot: isTriageNot,
+      silenceLanChatter: silenceLanChatter,
+      sourceSearch: isSender ? '' : sourceSearch,
+      isSourceSearchNot: isSender ? false : isSourceSearchNot,
+      destSearch: isSender ? destSearch : '',
+      isDestSearchNot: isSender ? isDestSearchNot : false,
+      protocolPills: protocolPills,
+      isProtocolNot: isProtocolNot,
+      senderFilters: isSender ? const {} : senderFilters,
+      isSenderNot: isSender ? false : isSenderNot,
+      receiverFilters: isSender ? receiverFilters : const {},
+      isReceiverNot: isSender ? isReceiverNot : false,
+      ipFilters: ipFilters,
+      timeStartUs: timeStartUs,
+      timeEndUs: timeEndUs,
+    );
+
+    final ipCol = isSender ? 'src_ip' : 'dst_ip';
+    final portCol = isSender ? 'src_port' : 'dst_port';
+    final endpointSubClauses = <String>[];
+    for (final ip in ipOnlyKeys) {
+      endpointSubClauses.add('$ipCol = ?');
+      params.add(ip);
+    }
+    for (final ep in ipPortFilters) {
+      if (!ipOnlyKeys.contains(ep.ip)) {
+        endpointSubClauses.add('($ipCol = ? AND $portCol = ?)');
+        params.add(ep.ip);
+        params.add(ep.port);
+      }
+    }
+
+    final endpointClause = endpointSubClauses.join(' OR ');
+    final fullWhere = whereSql.isNotEmpty
+        ? '$whereSql AND ($endpointClause)'
+        : 'WHERE $endpointClause';
+
+    final rows = _db.select('''
+      SELECT $ipCol AS ep_ip, $portCol AS ep_port, COUNT(*) AS cnt
+      FROM packets
+      $fullWhere
+      GROUP BY $ipCol, $portCol
+    ''', params);
+
+    for (final r in rows) {
+      final rowIp = r['ep_ip'] as String;
+      final rowPort = r['ep_port'] as int?;
+      final cnt = r['cnt'] as int;
+      if (ipOnlyKeys.contains(rowIp)) {
+        result[rowIp] = (result[rowIp] ?? 0) + cnt;
+      }
+      if (rowPort != null) {
+        final portKey = '$rowIp:$rowPort';
+        if (result.containsKey(portKey)) {
+          result[portKey] = (result[portKey] ?? 0) + cnt;
+        }
+        final bracketedPortKey = '[$rowIp]:$rowPort';
+        if (result.containsKey(bracketedPortKey)) {
+          result[bracketedPortKey] = (result[bracketedPortKey] ?? 0) + cnt;
+        }
+      }
+    }
+    return result;
+  }
+
   Map<int, double> queryPortBandwidth({int limit = 10}) {
     final range = _db.select('SELECT MIN(timestamp_us) as min_ts, MAX(timestamp_us) as max_ts FROM packets');
     if (range.isEmpty || range.first['min_ts'] == null || range.first['max_ts'] == null) {
@@ -851,8 +972,8 @@ class PacketDatabaseService {
       WHERE COALESCE(dst_port, src_port) IS NOT NULL
       GROUP BY port
       ORDER BY total_bytes DESC
-      LIMIT $limit
-    ''');
+      LIMIT ?
+    ''', [limit]);
 
     final result = <int, double>{};
     for (final r in rows) {
@@ -893,7 +1014,6 @@ class PacketDatabaseService {
     int? timeEndUs,
   }) {
     final (whereSql, params) = _buildWhereClauseAndParams(
-      isTriageMode: true,
       triageStatuses: const {
         TriageStatus.expected,
         TriageStatus.unclassified,
@@ -1005,21 +1125,64 @@ class PacketDatabaseService {
 
   /// Retroactively updates all packets according to custom protocol rules,
   /// honoring rule specificity (Tier 2 magic bytes before Tier 1 generic port catch-alls).
-  int relabelAllCustomProtocols(List<CustomProtocolRule> rules) {
+  int relabelAllCustomProtocols(
+    List<CustomProtocolRule> rules, {
+    BaselineProfile? baselineProfile,
+  }) {
     if (rules.isEmpty) {
-      _db.execute('''
-        UPDATE packets
-        SET detected_protocol = CASE
-          WHEN ip_proto = 6 THEN 'TCP'
-          WHEN ip_proto = 17 THEN 'UDP'
-          WHEN ip_proto = 1 THEN 'ICMP'
-          ELSE 'IP'
-        END,
-        custom_protocol_id = NULL
+      final rows = _db.select('''
+        SELECT
+          packet_no, src_ip, dst_ip, is_lan_noise,
+          detected_protocol, summary, base_protocol, base_summary
+        FROM packets
         WHERE custom_protocol_id IS NOT NULL
       ''');
+      if (rows.isEmpty) {
+        buildFlowsAndBuckets();
+        return 0;
+      }
+
+      _db.execute('BEGIN TRANSACTION');
+      try {
+        final updateStmt = _db.prepare('''
+          UPDATE packets
+          SET detected_protocol = ?, summary = ?, custom_protocol_id = NULL, custom_fields_json = NULL, triage_status = ?
+          WHERE packet_no = ?
+        ''');
+
+        for (final row in rows) {
+          final packetNo = row['packet_no'] as int;
+          final srcIp = row['src_ip'] as String;
+          final dstIp = row['dst_ip'] as String;
+          final isLanNoise = (row['is_lan_noise'] as int) == 1;
+          final restoredProto = (row['base_protocol'] as String?) ?? (row['detected_protocol'] as String);
+          final restoredSummary = (row['base_summary'] as String?) ?? (row['summary'] as String);
+          final restoredTriage = baselineProfile != null
+              ? baselineProfile.evaluateTriage(
+                  srcIp: srcIp,
+                  dstIp: dstIp,
+                  detectedProtocol: restoredProto,
+                  isLanNoise: isLanNoise,
+                  defaultRuleStatus: TriageStatus.unclassified,
+                )
+              : TriageStatus.unclassified;
+
+          updateStmt.execute([
+            restoredProto,
+            restoredSummary,
+            restoredTriage.name,
+            packetNo,
+          ]);
+        }
+        updateStmt.close();
+        _db.execute('COMMIT');
+      } catch (e) {
+        _db.execute('ROLLBACK');
+        rethrow;
+      }
+
       buildFlowsAndBuckets();
-      return 0;
+      return rows.length;
     }
 
     // Sort rules by specificity (Tier 2 magic bytes rules first)
@@ -1027,7 +1190,11 @@ class PacketDatabaseService {
       ..sort((a, b) => b.specificityScore.compareTo(a.specificityScore));
 
     final rows = _db.select('''
-      SELECT packet_no, ip_proto, src_port, dst_port, src_ip, dst_ip, payload_preview, summary, detected_protocol, custom_protocol_id
+      SELECT
+        packet_no, ip_proto, src_port, dst_port, src_ip, dst_ip,
+        payload_preview, payload_length, summary, detected_protocol,
+        triage_status, is_lan_noise, custom_protocol_id,
+        base_protocol, base_summary, custom_fields_json
       FROM packets
     ''');
 
@@ -1036,7 +1203,7 @@ class PacketDatabaseService {
     try {
       final updateStmt = _db.prepare('''
         UPDATE packets
-        SET detected_protocol = ?, custom_protocol_id = ?, triage_status = ?, summary = ?
+        SET detected_protocol = ?, custom_protocol_id = ?, triage_status = ?, summary = ?, custom_fields_json = ?
         WHERE packet_no = ?
       ''');
 
@@ -1047,9 +1214,13 @@ class PacketDatabaseService {
         final dstPort = row['dst_port'] as int?;
         final srcIp = row['src_ip'] as String;
         final dstIp = row['dst_ip'] as String;
+        final payloadLength = row['payload_length'] as int? ?? 0;
         final originalSummary = row['summary'] as String;
         final currentProto = row['detected_protocol'] as String;
+        final currentTriage = row['triage_status'] as String;
+        final isLanNoise = (row['is_lan_noise'] as int) == 1;
         final currentCustomId = row['custom_protocol_id'] as String?;
+        final currentFieldsJson = row['custom_fields_json'] as String?;
 
         final blob = row['payload_preview'];
         final List<int> preview;
@@ -1077,25 +1248,67 @@ class PacketDatabaseService {
         }
 
         if (matchedRule != null) {
-          String newSummary = originalSummary;
           final fields = matchedRule.extractFieldValues(preview);
+          final String? fieldsJson = fields.isEmpty ? null : jsonEncode(fields);
+          final String newSummary;
           if (fields.isNotEmpty) {
             final fieldsStr = fields.entries.map((e) => '${e.key}=${e.value}').join(', ');
             newSummary = '${matchedRule.name} [$fieldsStr]';
-          } else if (!newSummary.startsWith(matchedRule.name)) {
-            newSummary = '$srcPort → $dstPort [${matchedRule.name}] Len=${preview.length}';
+          } else {
+            newSummary = (srcPort != null && dstPort != null)
+                ? '$srcPort → $dstPort [${matchedRule.name}] Len=$payloadLength'
+                : '${matchedRule.name} Len=$payloadLength';
           }
 
-          updateStmt.execute([
-            matchedRule.name,
-            matchedRule.id,
-            matchedRule.defaultTriageStatus.name,
-            newSummary,
-            packetNo,
-          ]);
-          if (currentProto != matchedRule.name || currentCustomId != matchedRule.id) {
+          final newTriage = baselineProfile != null
+              ? baselineProfile.evaluateTriage(
+                  srcIp: srcIp,
+                  dstIp: dstIp,
+                  detectedProtocol: matchedRule.name,
+                  isLanNoise: isLanNoise,
+                  defaultRuleStatus: matchedRule.defaultTriageStatus,
+                )
+              : matchedRule.defaultTriageStatus;
+
+          final changed = currentProto != matchedRule.name ||
+              currentCustomId != matchedRule.id ||
+              currentTriage != newTriage.name ||
+              originalSummary != newSummary ||
+              currentFieldsJson != fieldsJson;
+
+          if (changed) {
+            updateStmt.execute([
+              matchedRule.name,
+              matchedRule.id,
+              newTriage.name,
+              newSummary,
+              fieldsJson,
+              packetNo,
+            ]);
             updatedCount++;
           }
+        } else if (currentCustomId != null) {
+          final restoredProto = (row['base_protocol'] as String?) ?? currentProto;
+          final restoredSummary = (row['base_summary'] as String?) ?? originalSummary;
+          final restoredTriage = baselineProfile != null
+              ? baselineProfile.evaluateTriage(
+                  srcIp: srcIp,
+                  dstIp: dstIp,
+                  detectedProtocol: restoredProto,
+                  isLanNoise: isLanNoise,
+                  defaultRuleStatus: TriageStatus.unclassified,
+                )
+              : TriageStatus.unclassified;
+
+          updateStmt.execute([
+            restoredProto,
+            null,
+            restoredTriage.name,
+            restoredSummary,
+            null,
+            packetNo,
+          ]);
+          updatedCount++;
         }
       }
       updateStmt.close();
@@ -1107,12 +1320,6 @@ class PacketDatabaseService {
 
     buildFlowsAndBuckets();
     return updatedCount;
-  }
-
-  /// Retroactively updates matching packets when a rule is added or modified.
-  int relabelCustomProtocol(CustomProtocolRule rule, [List<CustomProtocolRule>? allRules]) {
-    final rules = allRules ?? [rule];
-    return relabelAllCustomProtocols(rules);
   }
 
   /// Re-evaluates triage status for all packets based on the updated baseline profile and custom rules.

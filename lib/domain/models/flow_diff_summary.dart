@@ -33,16 +33,4 @@ class FlowDiffSummary {
   final int spikeCount;
   final double avgTransitDeltaUs;
   final int maxTransitDeltaUs;
-
-  String get flowDisplay {
-    final src = srcPort != null ? '$srcIp:$srcPort' : srcIp;
-    final dst = dstPort != null ? '$dstIp:$dstPort' : dstIp;
-    return '$protocolName • $src -> $dst';
-  }
-
-  double deliveryRateForHop(int captureIndex) {
-    if (totalSent <= 0) return 0.0;
-    final delivered = hopDeliveredCounts[captureIndex] ?? 0;
-    return (delivered / totalSent) * 100.0;
-  }
 }

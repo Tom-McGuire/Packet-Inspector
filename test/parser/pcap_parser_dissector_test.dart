@@ -35,6 +35,227 @@ void main() {
       expect(rawPackets.first.capturedLength, greaterThan(0));
       expect(rawPackets.first.linkType, equals(1));
     });
+
+    test('Classic PCAP fileByteOffset points directly to frame bytes (F1)', () {
+      final pcapBytes = DemoPcapGenerator.generateClassicPcap();
+      final rawPackets = PcapBinaryReader.parseBytes(pcapBytes);
+
+      final pkt1 = rawPackets.first;
+      expect(pkt1.fileByteOffset, equals(40));
+      expect(
+        pcapBytes.sublist(pkt1.fileByteOffset, pkt1.fileByteOffset + pkt1.capturedLength),
+        equals(pkt1.data),
+      );
+      expect(
+        pcapBytes.sublist(pkt1.fileByteOffset, pkt1.fileByteOffset + 6),
+        equals([0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]),
+      );
+
+      final acme = rawPackets.last;
+      expect(
+        pcapBytes.sublist(acme.fileByteOffset, acme.fileByteOffset + 6),
+        equals([0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA]),
+      );
+      expect(
+        pcapBytes.sublist(acme.fileByteOffset + 42, acme.fileByteOffset + 46),
+        equals([0x41, 0x43, 0x4D, 0x45]), // "ACME"
+      );
+    });
+
+    test('PCAPNG EPB and SPB fileByteOffset point directly to frame bytes (F1)', () {
+      final pcapNgBytes = DemoPcapGenerator.generatePcapNg();
+      final epbPackets = PcapBinaryReader.parseBytes(pcapNgBytes);
+      expect(epbPackets.first.fileByteOffset, equals(76));
+      expect(
+        pcapNgBytes.sublist(
+          epbPackets.first.fileByteOffset,
+          epbPackets.first.fileByteOffset + epbPackets.first.capturedLength,
+        ),
+        equals(epbPackets.first.data),
+      );
+
+      // Synthetic PCAPNG with SHB + IDB (linkType 1) + SPB (block 0x00000003)
+      final frame = Uint8List.fromList([
+        0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+        0x08, 0x00,
+        0x45, 0x00,
+      ]);
+      final ng = _buildPcapNg([
+        _buildShb(),
+        _buildIdb(linkType: 1),
+        _buildSpb(origLen: frame.length, frame: frame),
+      ]);
+      final spbOffset = 28 + 20; // SHB(28) + IDB(20)
+      final spbPackets = PcapBinaryReader.parseBytes(ng);
+      expect(spbPackets.length, equals(1));
+      expect(spbPackets.first.linkType, equals(1));
+      expect(spbPackets.first.fileByteOffset, equals(spbOffset + 12));
+      expect(spbPackets.first.data, equals(frame));
+    });
+
+    test('PCAPNG tracks multi-IDB descriptors, SHB resets, SPB if0, and overflow-safe BigInt timestamps (F7)', () {
+      final dummyFrame = Uint8List.fromList(List<int>.filled(16, 0xAB));
+
+      // Section 1:
+      // IDB 0: linkType=1, default tsResolution=10^6
+      // IDB 1: linkType=113, if_tsresol=9 (10^9)
+      // IDB 2: linkType=101, no option 9 (must reset to default 10^6, NOT inherit 10^9!)
+      // IDB 3: linkType=1, if_tsresol=0x80|32 (2^32)
+      // IDB 4: linkType=1, invalid if_tsresol=0x80|63 (must safely ignore and default to 10^6)
+      // Section 2:
+      // SHB resets interfaces list -> IDB 0: linkType=0
+      final ngBytes = _buildPcapNg([
+        _buildShb(),
+        _buildIdb(linkType: 1),
+        _buildIdb(linkType: 113, tsResolByte: 9),
+        _buildIdb(linkType: 101),
+        _buildIdb(linkType: 1, tsResolByte: 0x80 | 32),
+        _buildIdb(linkType: 1, tsResolByte: 0x80 | 63),
+        _buildEpb(ifId: 0, tsHigh: 0, tsLow: 2500000, frame: dummyFrame),
+        _buildEpb(ifId: 1, tsHigh: 0, tsLow: 500000000, frame: dummyFrame),
+        _buildEpb(ifId: 2, tsHigh: 0, tsLow: 123456, frame: dummyFrame),
+        // tsHigh=0x80000000, tsLow=0x80000000 with tsResol = 2^32:
+        // rawTs = 2^63 + 2^31; (rawTs * 1000000) / 2^32 = 2^31 * 1000000 + 500000 = 2147483648500000
+        _buildEpb(ifId: 3, tsHigh: 0x80000000, tsLow: 0x80000000, frame: dummyFrame),
+        _buildEpb(ifId: 4, tsHigh: 0, tsLow: 777, frame: dummyFrame),
+        // Out-of-bounds ifId falls back safely
+        _buildEpb(ifId: 99, tsHigh: 0, tsLow: 888, frame: dummyFrame),
+        // SPB always uses interface 0 in current section (linkType=1)
+        _buildSpb(origLen: dummyFrame.length, frame: dummyFrame),
+        // Second SHB resets interfaces
+        _buildShb(),
+        _buildIdb(linkType: 0),
+        _buildEpb(ifId: 0, tsHigh: 0, tsLow: 42, frame: dummyFrame),
+      ]);
+
+      final packets = PcapBinaryReader.parseBytes(ngBytes);
+      expect(packets.length, equals(8));
+
+      expect(packets[0].linkType, equals(1));
+      expect(packets[0].timestampUs, equals(2500000));
+
+      expect(packets[1].linkType, equals(113));
+      expect(packets[1].timestampUs, equals(500000));
+
+      expect(packets[2].linkType, equals(101));
+      expect(packets[2].timestampUs, equals(123456));
+
+      expect(packets[3].linkType, equals(1));
+      expect(packets[3].timestampUs, equals(2147483648500000));
+
+      expect(packets[4].linkType, equals(1));
+      expect(packets[4].timestampUs, equals(777));
+
+      expect(packets[5].linkType, equals(1));
+      expect(packets[5].timestampUs, equals(888));
+
+      expect(packets[6].linkType, equals(1)); // SPB -> interface 0 of section 1
+      expect(packets[6].timestampUs, equals(0));
+
+      expect(packets[7].linkType, equals(0)); // section 2 IDB 0
+      expect(packets[7].timestampUs, equals(42));
+    });
+
+    test('PCAPNG SPB clamps non-4B-aligned frame without leaking 32-bit padding (Challenge 1)', () {
+      final frame55 = _buildTcpIpv4EthernetFrame(payload: Uint8List.fromList([0x42]));
+      expect(frame55.length, equals(55));
+
+      final ng = _buildPcapNg([
+        _buildShb(),
+        _buildIdb(linkType: 1, snapLen: 65535),
+        _buildSpb(origLen: 55, frame: frame55),
+      ]);
+
+      final raw = PcapBinaryReader.parseBytes(ng);
+      expect(raw.length, equals(1));
+      expect(raw.first.originalLength, equals(55));
+      expect(raw.first.capturedLength, equals(55));
+      expect(raw.first.data.length, equals(55));
+      expect(raw.first.data, equals(frame55));
+      expect(raw.first.fileByteOffset, equals(28 + 20 + 12));
+
+      final info = PacketDissector.dissect(rawPacket: raw.first);
+      expect(info.detectedProtocol, equals('TCP'));
+      expect(info.payloadLength, equals(1));
+      expect(info.payloadPreview, equals([0x42]));
+    });
+
+    test('PCAPNG SPB respects IDB snapLen truncation for aligned and unaligned snapLen', () {
+      final frame58 = _buildTcpIpv4EthernetFrame(
+        payload: Uint8List.fromList([0x11, 0x22, 0x33, 0x44]),
+      );
+      expect(frame58.length, equals(58));
+
+      // Aligned snapLen = 40 < origLen = 58
+      final ngAligned = _buildPcapNg([
+        _buildShb(),
+        _buildIdb(linkType: 1, snapLen: 40),
+        _buildSpb(origLen: 58, frame: Uint8List.sublistView(frame58, 0, 40)),
+      ]);
+      final rawAligned = PcapBinaryReader.parseBytes(ngAligned);
+      expect(rawAligned.length, equals(1));
+      expect(rawAligned.first.capturedLength, equals(40));
+      expect(rawAligned.first.originalLength, equals(58));
+      expect(rawAligned.first.data.length, equals(40));
+      expect(rawAligned.first.data, equals(frame58.sublist(0, 40)));
+
+      // Unaligned snapLen = 41 < origLen = 58 (SPB block pads 41B to 44B)
+      final ngUnaligned = _buildPcapNg([
+        _buildShb(),
+        _buildIdb(linkType: 1, snapLen: 41),
+        _buildSpb(origLen: 58, frame: Uint8List.sublistView(frame58, 0, 41)),
+      ]);
+      final rawUnaligned = PcapBinaryReader.parseBytes(ngUnaligned);
+      expect(rawUnaligned.length, equals(1));
+      expect(rawUnaligned.first.capturedLength, equals(41));
+      expect(rawUnaligned.first.originalLength, equals(58));
+      expect(rawUnaligned.first.data.length, equals(41));
+      expect(rawUnaligned.first.data, equals(frame58.sublist(0, 41)));
+    });
+
+    test('PCAPNG SPB treats snapLen == 0 as unlimited and clamps to origLen', () {
+      final frame55 = _buildTcpIpv4EthernetFrame(payload: Uint8List.fromList([0x42]));
+      final ng = _buildPcapNg([
+        _buildShb(),
+        _buildIdb(linkType: 1, snapLen: 0),
+        _buildSpb(origLen: 55, frame: frame55),
+      ]);
+
+      final raw = PcapBinaryReader.parseBytes(ng);
+      expect(raw.length, equals(1));
+      expect(raw.first.capturedLength, equals(55));
+      expect(raw.first.originalLength, equals(55));
+      expect(raw.first.data.length, equals(55));
+      expect(raw.first.data, equals(frame55));
+    });
+
+    test('PCAPNG SPB handles empty interfaces fallback and blockTotalLength == 16 cleanly', () {
+      final frame55 = _buildTcpIpv4EthernetFrame(payload: Uint8List.fromList([0x42]));
+
+      // No prior IDB -> fallback linkType = 1, snapLen = 0 -> clamps to origLen (55)
+      final ngNoIdb = _buildPcapNg([
+        _buildShb(),
+        _buildSpb(origLen: 55, frame: frame55),
+      ]);
+      final rawNoIdb = PcapBinaryReader.parseBytes(ngNoIdb);
+      expect(rawNoIdb.length, equals(1));
+      expect(rawNoIdb.first.linkType, equals(1));
+      expect(rawNoIdb.first.capturedLength, equals(55));
+      expect(rawNoIdb.first.data, equals(frame55));
+
+      // blockTotalLength == 16 with origLen == 60 -> capLen == 0, empty data, no RangeError
+      final ngEmptySpb = _buildPcapNg([
+        _buildShb(),
+        _buildIdb(linkType: 1, snapLen: 65535),
+        _buildSpb(origLen: 60, frame: Uint8List(0)),
+      ]);
+      final rawEmptySpb = PcapBinaryReader.parseBytes(ngEmptySpb);
+      expect(rawEmptySpb.length, equals(1));
+      expect(rawEmptySpb.first.capturedLength, equals(0));
+      expect(rawEmptySpb.first.originalLength, equals(60));
+      expect(rawEmptySpb.first.data, isEmpty);
+    });
   });
 
   group('PacketDissector Protocol & L7 Tests', () {
@@ -159,6 +380,9 @@ void main() {
       );
 
       expect(info.detectedProtocol, equals('ACME Telemetry'));
+      expect(info.baseProtocol, equals('UDP'));
+      expect(info.baseSummary, contains('45820 → 45820'));
+      expect(info.customDefaultTriageStatus, equals(TriageStatus.expected));
       expect(info.customProtocolId, equals('acme_proto'));
       expect(info.customFields['CommandID'], equals(101));
       expect(info.customFields['DeviceSerial'], equals(883719));
@@ -166,6 +390,42 @@ void main() {
       expect(info.customFields['Tag'], equals('PROD'));
       expect(info.summary, contains('CommandID=101'));
       expect(info.summary, contains('DeviceSerial=883719'));
+    });
+
+    test('PacketDissector caps payloadPreview at 256 bytes (F22)', () {
+      final payload = List<int>.generate(600, (i) => i & 0xFF);
+      final udpLen = 8 + payload.length;
+      final frame = <int>[
+        0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
+        0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB,
+        0x08, 0x00,
+        0x45, 0x00, 0x00, 0x00,
+        0x00, 0x01, 0x00, 0x00,
+        0x40, 0x11, 0x00, 0x00,
+        192, 168, 1, 10,
+        192, 168, 1, 20,
+        0xC0, 0x00,
+        0xC0, 0x01,
+        (udpLen >> 8) & 0xFF, udpLen & 0xFF,
+        0x00, 0x00,
+        ...payload,
+      ];
+
+      final raw = RawCapturedPacket(
+        packetNo: 1,
+        timestampUs: 1000,
+        capturedLength: frame.length,
+        originalLength: frame.length,
+        linkType: 1,
+        fileByteOffset: 0,
+        data: Uint8List.fromList(frame),
+      );
+
+      final info = PacketDissector.dissect(rawPacket: raw);
+      expect(PacketDissector.maxPayloadPreviewBytes, equals(256));
+      expect(info.payloadLength, equals(600));
+      expect(info.payloadPreview.length, equals(256));
+      expect(info.payloadPreview, equals(payload.sublist(0, 256)));
     });
 
     test('Custom rules prioritize magic bytes over generic port catch-all (specificity ordering)', () {
@@ -252,4 +512,117 @@ void main() {
       expect(dissectedGeneric.customProtocolId, equals('sacn_generic'));
     });
   });
+}
+
+Uint8List _buildPcapNg(List<Uint8List> blocks) {
+  final out = BytesBuilder();
+  for (final b in blocks) {
+    out.add(b);
+  }
+  return out.toBytes();
+}
+
+Uint8List _buildShb() {
+  final bd = ByteData(28);
+  bd.setUint32(0, 0x0A0D0D0A, Endian.little);
+  bd.setUint32(4, 28, Endian.little);
+  bd.setUint32(8, 0x1A2B3C4D, Endian.little);
+  bd.setUint16(12, 1, Endian.little);
+  bd.setUint16(14, 0, Endian.little);
+  bd.setInt64(16, -1, Endian.little);
+  bd.setUint32(24, 28, Endian.little);
+  return bd.buffer.asUint8List();
+}
+
+Uint8List _buildIdb({
+  required int linkType,
+  int? tsResolByte,
+  int snapLen = 65535,
+}) {
+  final hasResol = tsResolByte != null;
+  final totalLen = hasResol ? 28 : 20;
+  final bd = ByteData(totalLen);
+  bd.setUint32(0, 0x00000001, Endian.little);
+  bd.setUint32(4, totalLen, Endian.little);
+  bd.setUint16(8, linkType, Endian.little);
+  bd.setUint16(10, 0, Endian.little);
+  bd.setUint32(12, snapLen, Endian.little);
+  if (hasResol) {
+    bd.setUint16(16, 9, Endian.little); // if_tsresol
+    bd.setUint16(18, 1, Endian.little);
+    bd.setUint8(20, tsResolByte);
+    bd.setUint32(24, totalLen, Endian.little);
+  } else {
+    bd.setUint32(16, totalLen, Endian.little);
+  }
+  return bd.buffer.asUint8List();
+}
+
+Uint8List _buildEpb({
+  required int ifId,
+  required int tsHigh,
+  required int tsLow,
+  required Uint8List frame,
+}) {
+  final paddedCap = (frame.length + 3) & ~3;
+  final totalLen = 32 + paddedCap;
+  final bytes = Uint8List(totalLen);
+  final bd = ByteData.sublistView(bytes);
+  bd.setUint32(0, 0x00000006, Endian.little);
+  bd.setUint32(4, totalLen, Endian.little);
+  bd.setUint32(8, ifId, Endian.little);
+  bd.setUint32(12, tsHigh, Endian.little);
+  bd.setUint32(16, tsLow, Endian.little);
+  bd.setUint32(20, frame.length, Endian.little);
+  bd.setUint32(24, frame.length, Endian.little);
+  bytes.setRange(28, 28 + frame.length, frame);
+  bd.setUint32(totalLen - 4, totalLen, Endian.little);
+  return bytes;
+}
+
+Uint8List _buildSpb({required int origLen, required Uint8List frame}) {
+  final paddedCap = (frame.length + 3) & ~3;
+  final totalLen = 16 + paddedCap;
+  final bytes = Uint8List(totalLen);
+  final bd = ByteData.sublistView(bytes);
+  bd.setUint32(0, 0x00000003, Endian.little);
+  bd.setUint32(4, totalLen, Endian.little);
+  bd.setUint32(8, origLen, Endian.little);
+  bytes.setRange(12, 12 + frame.length, frame);
+  bd.setUint32(totalLen - 4, totalLen, Endian.little);
+  return bytes;
+}
+
+Uint8List _buildTcpIpv4EthernetFrame({required Uint8List payload}) {
+  final ipTotalLen = 20 + 20 + payload.length;
+  final frame = Uint8List(14 + ipTotalLen);
+  // Ethernet (14 bytes)
+  frame.setRange(0, 6, [0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
+  frame.setRange(6, 12, [0x00, 0x11, 0x22, 0x33, 0x44, 0x55]);
+  frame[12] = 0x08;
+  frame[13] = 0x00;
+
+  // IPv4 (20 bytes)
+  final ipBd = ByteData.sublistView(frame, 14, 34);
+  ipBd.setUint8(0, 0x45);
+  ipBd.setUint16(2, ipTotalLen, Endian.big);
+  ipBd.setUint8(8, 64);
+  ipBd.setUint8(9, 6); // TCP
+  frame.setRange(26, 30, [192, 168, 1, 10]);
+  frame.setRange(30, 34, [192, 168, 1, 20]);
+
+  // TCP (20 bytes)
+  final tcpBd = ByteData.sublistView(frame, 34, 54);
+  tcpBd.setUint16(0, 12345, Endian.big);
+  tcpBd.setUint16(2, 80, Endian.big);
+  tcpBd.setUint32(4, 1, Endian.big);
+  tcpBd.setUint32(8, 1, Endian.big);
+  tcpBd.setUint8(12, 5 << 4);
+  tcpBd.setUint8(13, 0x18);
+  tcpBd.setUint16(14, 65535, Endian.big);
+
+  if (payload.isNotEmpty) {
+    frame.setRange(54, 54 + payload.length, payload);
+  }
+  return frame;
 }

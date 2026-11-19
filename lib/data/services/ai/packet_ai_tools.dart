@@ -23,7 +23,7 @@ class PacketAiTools {
 
   final PacketRepository repository;
 
-  AiToolResult getCaptureSummary({bool onlyUnexpected = false}) {
+  AiToolResult getCaptureSummary() {
     final protocolCounts = repository.getProtocolCounts();
     final triageCounts = repository.getTriageCounts(silenceLanChatter: false);
     final totalPackets = repository.getPacketCount(silenceLanChatter: false);
@@ -121,7 +121,6 @@ class PacketAiTools {
   }) {
     final packets = repository.queryPackets(
       limit: 20,
-      isTriageMode: false,
     ).where((p) => (p.srcPort == port || p.dstPort == port) && p.ipProto == ipProto).toList();
 
     if (packets.isEmpty) {
@@ -182,14 +181,12 @@ class PacketAiTools {
 
   AiToolResult generateFilteredReport({
     required AiFilterReferences refs,
-    String? userPrompt,
   }) {
     final protocolPills = refs.allProtocolNames;
     final senderFilters = refs.allSenderKeys;
     final receiverFilters = refs.allReceiverKeys;
 
     final matchingPacketCount = repository.getPacketCount(
-      isTriageMode: false,
       protocolPills: protocolPills,
       senderFilters: senderFilters,
       receiverFilters: receiverFilters,
@@ -204,7 +201,6 @@ class PacketAiTools {
     // Sample matching packets (up to 100)
     final samplePackets = repository.queryPackets(
       limit: 100,
-      isTriageMode: false,
       protocolPills: protocolPills,
       senderFilters: senderFilters,
       receiverFilters: receiverFilters,
@@ -277,7 +273,13 @@ class PacketAiTools {
       );
     }
 
-    final records = diffEngine.queryDiffRecords(filterMode: DiffFilterMode.sharedFlowsOnly);
+    var records = diffEngine.queryDiffRecords(filterMode: DiffFilterMode.sharedFlowsOnly);
+    if (records.isEmpty && slots.first.packetCount > 0) {
+      records = diffEngine
+          .queryDiffRecords(filterMode: DiffFilterMode.fullDiff)
+          .where((r) => r.primaryStatus != DiffStatus.injected)
+          .toList();
+    }
     final totalShared = records.length;
     final droppedRecords = records.where((r) => r.statuses.contains(DiffStatus.dropped)).toList();
     final sourceGapCount = records.where((r) => r.statuses.contains(DiffStatus.sourceGap)).length;

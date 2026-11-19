@@ -12,6 +12,8 @@ import 'package:packet_inspector/ui/features/compare/view_models/capture_compare
 import 'package:packet_inspector/ui/features/compare/views/compare_setup_dialog.dart';
 import 'package:packet_inspector/ui/features/compare/views/compare_summary_bar.dart';
 import 'package:packet_inspector/ui/features/compare/views/diff_packet_table.dart';
+import 'package:packet_inspector/ui/features/compare/views/diff_timeline_scrubber.dart';
+import 'package:packet_inspector/ui/features/compare/views/hex_diff_inspector.dart';
 import 'package:packet_inspector/ui/features/inspector/view_models/inspector_view_model.dart';
 import 'package:packet_inspector/ui/features/inspector/views/inspector_screen.dart';
 import 'package:provider/provider.dart';
@@ -272,6 +274,130 @@ void main() {
       await tester.tap(find.text('Jump to First Drop'));
       await tester.pumpAndSettle();
       expect(compareVm.selectedRecord?.primaryStatus, DiffStatus.dropped);
+    });
+
+    testWidgets('HexDiffInspector renders baseline hex bytes and differing byte highlights for a mutated row', (tester) async {
+      tester.view.physicalSize = const Size(1400, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      final compareVm = CaptureCompareViewModel();
+      addTearDown(compareVm.dispose);
+
+      await compareVm.loadDemoDiff();
+      final mutated = compareVm.visibleRecords.firstWhere(
+        (r) => r.statuses.contains(DiffStatus.qosVlanMutated),
+      );
+      compareVm.selectRecord(mutated);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: compareVm,
+          child: const MaterialApp(
+            home: Scaffold(body: HexDiffInspector()),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Hex Diff Inspector — Row #${mutated.rowIndex} (${mutated.protocolName})'),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          'A: ${compareVm.slots[0].label} (Frame #${mutated.baselineFrameNumber}, DSCP=${mutated.baselineDscp ?? '-'}, VLAN=${mutated.baselineVlanId ?? '-'})',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Packet not present at this hop.'), findsNothing);
+      expect(find.textContaining('differing byte(s)'), findsOneWidget);
+      expect(find.text('45'), findsWidgets);
+    });
+
+    testWidgets('DiffTimelineScrubber tap and DiffPacketTable filtered scroll map rowIndex to list position and display 1-based #', (tester) async {
+      tester.view.physicalSize = const Size(1400, 320);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.resetPhysicalSize);
+
+      const baseTs = 1794000000000000;
+      final cap0 = <RawCapturedPacket>[];
+      final cap1 = <RawCapturedPacket>[];
+
+      // 40 packets in one shared flow: even indices are dropped in cap1, odd indices are delivered.
+      // When filtered to droppedOnly, visibleRecords has 20 items whose rowIndex values
+      // are 1, 3, 5, ..., 39 (non-contiguous with list indices 0..19).
+      for (var i = 0; i < 40; i++) {
+        final ts = baseTs + i * 10000;
+        final payload = Uint8List.fromList(List.generate(16, (j) => (i + j) & 0xFF));
+        final frame = _buildUdpTestFrame(
+          srcIp: '10.0.0.1',
+          dstIp: '10.0.0.2',
+          srcPort: 5000,
+          dstPort: 5000,
+          dscp: 46,
+          payload: payload,
+        );
+        cap0.add(_rawPkt(i + 1, ts, frame));
+        if (i.isOdd) {
+          cap1.add(_rawPkt(cap1.length + 1, ts + 200, frame));
+        }
+      }
+
+      final compareVm = CaptureCompareViewModel();
+      addTearDown(compareVm.dispose);
+      await compareVm.loadCaptures([
+        CaptureSourceInput(label: 'Hop A', filePath: 'a.pcap', rawPackets: cap0),
+        CaptureSourceInput(label: 'Hop B', filePath: 'b.pcap', rawPackets: cap1),
+      ]);
+      compareVm.setStatusFilter(DiffStatusFilter.droppedOnly);
+
+      expect(compareVm.visibleRecords.length, 20);
+      expect(compareVm.visibleRecords.first.rowIndex, 1);
+      expect(compareVm.visibleRecords.last.rowIndex, 39);
+
+      await tester.pumpWidget(
+        ChangeNotifierProvider.value(
+          value: compareVm,
+          child: const MaterialApp(
+            home: Scaffold(
+              body: Column(
+                children: [
+                  DiffTimelineScrubber(),
+                  Expanded(child: DiffPacketTable()),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Verify 1-based rowIndex display for the first filtered row (#1).
+      expect(find.text('1'), findsOneWidget);
+
+      // Tap near the right edge of the scrubber bar to jump to the last filtered record (rowIndex 39, listIndex 19).
+      final paintFinder = find.descendant(
+        of: find.byType(DiffTimelineScrubber),
+        matching: find.byType(CustomPaint),
+      );
+      final paintBox = tester.getRect(paintFinder);
+      await tester.tapAt(Offset(paintBox.right - 10, paintBox.center.dy));
+      await tester.pumpAndSettle();
+
+      expect(compareVm.selectedRecord, isNotNull);
+      final selectedListIdx = compareVm.visibleRecords.indexWhere(
+        (r) => r.rowIndex == compareVm.selectedRecord!.rowIndex,
+      );
+      expect(selectedListIdx, greaterThan(5));
+
+      final listView = tester.widget<ListView>(find.byType(ListView));
+      final controller = listView.controller!;
+      final expectedOffset = (selectedListIdx * 34.0).clamp(
+        0.0,
+        controller.position.maxScrollExtent,
+      );
+      expect(controller.offset, closeTo(expectedOffset, 0.01));
     });
   });
 }

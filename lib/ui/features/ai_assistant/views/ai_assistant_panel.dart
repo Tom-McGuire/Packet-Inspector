@@ -5,7 +5,9 @@ import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import '../../../../domain/models/custom_protocol_rule.dart';
 import '../../../../domain/models/packet_record.dart';
+import '../../../features/compare/view_models/capture_compare_view_model.dart';
 import '../../../features/inspector/view_models/inspector_view_model.dart';
+import '../../../../data/services/ai/cli_llm_service.dart';
 import '../../../../data/services/ai/packet_ai_tools.dart';
 import '../../../../data/services/ai/llm_provider_service.dart';
 import '../../../../data/services/export/csv_export_service.dart';
@@ -126,12 +128,15 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
     if (text.isEmpty) return;
     _inputCtrl.clear();
 
+    final compareVm = Provider.of<CaptureCompareViewModel?>(context, listen: false);
+    final diffEngine = (compareVm != null && compareVm.isCompareMode) ? compareVm.engine : null;
+
     setState(() {
       _isSending = true;
     });
 
     try {
-      await _llmService.sendMessage(text);
+      await _llmService.sendMessage(text, diffEngine: diffEngine);
     } finally {
       if (mounted) {
         setState(() {
@@ -222,6 +227,39 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
                         '💻 Local Gemma (Ollama / LAN)',
                         style: TextStyle(
                           fontWeight: _llmService.backendMode == LlmBackendMode.localGemma
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: LlmBackendMode.antigravityCli,
+                      child: Text(
+                        '🚀 Antigravity CLI (agy)',
+                        style: TextStyle(
+                          fontWeight: _llmService.backendMode == LlmBackendMode.antigravityCli
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: LlmBackendMode.claudeCodeCli,
+                      child: Text(
+                        '🧠 Claude Code CLI (claude)',
+                        style: TextStyle(
+                          fontWeight: _llmService.backendMode == LlmBackendMode.claudeCodeCli
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                        ),
+                      ),
+                    ),
+                    PopupMenuItem(
+                      value: LlmBackendMode.chatGptCodexCli,
+                      child: Text(
+                        '🤖 ChatGPT Codex CLI (codex)',
+                        style: TextStyle(
+                          fontWeight: _llmService.backendMode == LlmBackendMode.chatGptCodexCli
                               ? FontWeight.bold
                               : FontWeight.normal,
                         ),
@@ -383,9 +421,126 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
         return _buildCustomProtocolSuggestionCard(context, vm, result);
       case 'filtered_library_report':
         return _buildFilteredReportCard(context, vm, result);
+      case 'compare_summary_card':
+        return _buildCompareSummaryCard(context, result);
       default:
         return const SizedBox.shrink();
     }
+  }
+
+  Widget _buildCompareSummaryCard(BuildContext context, AiToolResult result) {
+    final d = result.data;
+    final hasComparison = d['hasComparison'] as bool? ?? false;
+    final totalShared = d['totalShared'] as int? ?? 0;
+    final droppedCount = d['droppedCount'] as int? ?? 0;
+    final sourceGapCount = d['sourceGapCount'] as int? ?? 0;
+    final outOfOrderCount = d['outOfOrderCount'] as int? ?? 0;
+    final mutatedCount = d['mutatedCount'] as int? ?? 0;
+    final spikeCount = d['spikeCount'] as int? ?? 0;
+    final firstDropRowIndex = d['firstDropRowIndex'] as int?;
+
+    final hopLines = result.summaryText
+        .split('\n')
+        .where((line) => line.trim().startsWith('• Hop '))
+        .toList();
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: (droppedCount > 0 ? Colors.redAccent : Colors.teal).withValues(alpha: 0.6),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(
+                Icons.compare_arrows,
+                size: 16,
+                color: droppedCount > 0 ? Colors.redAccent : Colors.teal,
+              ),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  'Multi-Capture Path Comparison',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                ),
+              ),
+              if (hasComparison)
+                Text(
+                  '$totalShared shared pkts',
+                  style: const TextStyle(fontSize: 10, color: Colors.grey),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          if (!hasComparison)
+            Text(
+              result.summaryText,
+              style: const TextStyle(fontSize: 11),
+            )
+          else ...[
+            if (hopLines.isNotEmpty)
+              ...hopLines.map(
+                (line) => Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 2),
+                  child: Text(
+                    line,
+                    style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+                  ),
+                ),
+              ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: [
+                Chip(
+                  label: Text('Dropped: $droppedCount', style: const TextStyle(fontSize: 10)),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                ),
+                Chip(
+                  label: Text('Source Gaps: $sourceGapCount', style: const TextStyle(fontSize: 10)),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                ),
+                Chip(
+                  label: Text('Out-of-Order: $outOfOrderCount', style: const TextStyle(fontSize: 10)),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                ),
+                Chip(
+                  label: Text('QoS/VLAN Mutated: $mutatedCount', style: const TextStyle(fontSize: 10)),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                ),
+                Chip(
+                  label: Text('Latency Spikes: $spikeCount', style: const TextStyle(fontSize: 10)),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                ),
+              ],
+            ),
+            if (droppedCount > 0 && firstDropRowIndex != null) ...[
+              const SizedBox(height: 8),
+              FilledButton.icon(
+                icon: const Icon(Icons.location_searching, size: 14),
+                label: const Text('Jump to First Drop', style: TextStyle(fontSize: 11)),
+                onPressed: () {
+                  final compareVm = Provider.of<CaptureCompareViewModel?>(context, listen: false);
+                  compareVm?.jumpToFirstDrop();
+                },
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
   }
 
   Widget _buildSummaryCard(BuildContext context, AiToolResult result) {
@@ -617,94 +772,21 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
   }
 
   void _showBackendConfigDialog(BuildContext context) {
-    final apiKeyCtrl = TextEditingController(text: _llmService.geminiApiKey);
-    final geminiModelCtrl = TextEditingController(text: _llmService.geminiModel);
-    final ollamaUrlCtrl = TextEditingController(text: _llmService.ollamaUrl);
-    final ollamaModelCtrl = TextEditingController(text: _llmService.ollamaModel);
-
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('AI Model Configuration'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (_llmService.backendMode == LlmBackendMode.geminiCloud) ...[
-              const Text('Google Gemini Cloud API Settings:'),
-              const SizedBox(height: 8),
-              TextField(
-                controller: apiKeyCtrl,
-                obscureText: true,
-                decoration: const InputDecoration(
-                  labelText: 'Gemini API Key',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                  helperText: '🔒 Encrypted at rest (machine-bound)',
-                ),
+      builder: (ctx) => _BackendConfigDialog(
+        llmService: _llmService,
+        onSaved: () {
+          if (mounted) {
+            setState(() {});
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('AI settings and encrypted key saved.'),
+                duration: Duration(seconds: 2),
               ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: geminiModelCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Gemini Model',
-                  hintText: 'gemini-3.8-flash',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-            ] else ...[
-              const Text('Local / LAN Gemma (Ollama / LM Studio):'),
-              const SizedBox(height: 8),
-              TextField(
-                controller: ollamaUrlCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Endpoint URL',
-                  hintText: 'http://localhost:11434',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                controller: ollamaModelCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Model Name',
-                  hintText: 'gemma2:9b or gemma3:4b',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
-              ),
-            ],
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Close'),
-          ),
-          FilledButton(
-            onPressed: () {
-              setState(() {
-                _llmService.geminiApiKey = apiKeyCtrl.text.trim();
-                _llmService.geminiModel = geminiModelCtrl.text.trim().isNotEmpty
-                    ? geminiModelCtrl.text.trim()
-                    : 'gemini-3.8-flash';
-                _llmService.ollamaUrl = ollamaUrlCtrl.text.trim();
-                _llmService.ollamaModel = ollamaModelCtrl.text.trim();
-                _llmService.saveSettings();
-              });
-              Navigator.of(ctx).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('AI settings and encrypted key saved.'),
-                  duration: Duration(seconds: 2),
-                ),
-              );
-            },
-            child: const Text('Save'),
-          ),
-        ],
+            );
+          }
+        },
       ),
     );
   }
@@ -1179,6 +1261,392 @@ class _AiAssistantPanelState extends State<AiAssistantPanel> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _BackendConfigDialog extends StatefulWidget {
+  const _BackendConfigDialog({
+    required this.llmService,
+    required this.onSaved,
+  });
+
+  final LlmProviderService llmService;
+  final VoidCallback onSaved;
+
+  @override
+  State<_BackendConfigDialog> createState() => _BackendConfigDialogState();
+}
+
+class _BackendConfigDialogState extends State<_BackendConfigDialog> {
+  late final TextEditingController _apiKeyCtrl;
+  late final TextEditingController _geminiModelCtrl;
+  late final TextEditingController _ollamaUrlCtrl;
+  late final TextEditingController _agyPathCtrl;
+  late final TextEditingController _claudePathCtrl;
+  late final TextEditingController _codexPathCtrl;
+
+  late String _selectedOllamaModel;
+  late String _selectedAgyModel;
+  late String _selectedClaudeModel;
+  late String _selectedCodexModel;
+
+  List<String> _ollamaModels = const ['gemma2:9b', 'gemma3:4b', 'llama3.2:latest', 'mistral', 'deepseek-r1'];
+  List<CliModelInfo> _agyModels = CliLlmService.defaultAgyModels();
+  late final List<CliModelInfo> _claudeModels;
+  late final List<CliModelInfo> _codexModels;
+
+  bool _isLoadingModels = false;
+  bool _isTestingConnection = false;
+  CliStatus? _cliStatus;
+
+  @override
+  void initState() {
+    super.initState();
+    final s = widget.llmService;
+    _apiKeyCtrl = TextEditingController(text: s.geminiApiKey);
+    _geminiModelCtrl = TextEditingController(text: s.geminiModel);
+    _ollamaUrlCtrl = TextEditingController(text: s.ollamaUrl);
+    _agyPathCtrl = TextEditingController(text: s.agyPath);
+    _claudePathCtrl = TextEditingController(text: s.claudePath);
+    _codexPathCtrl = TextEditingController(text: s.codexPath);
+
+    _selectedOllamaModel = s.ollamaModel.isNotEmpty ? s.ollamaModel : 'gemma2:9b';
+    _selectedAgyModel = s.agyModel.isNotEmpty ? s.agyModel : 'gemini-3.8-flash-low';
+    _selectedClaudeModel = s.claudeModel.isNotEmpty ? s.claudeModel : 'haiku';
+    _selectedCodexModel = s.codexModel.isNotEmpty ? s.codexModel : 'gpt-4o-mini';
+
+    _claudeModels = s.cliService.listClaudeModels();
+    _codexModels = s.cliService.listCodexModels();
+
+    if (s.backendMode == LlmBackendMode.localGemma) {
+      _discoverOllamaModels();
+    } else if (s.backendMode == LlmBackendMode.antigravityCli) {
+      _discoverAgyModels();
+    }
+  }
+
+  @override
+  void dispose() {
+    _apiKeyCtrl.dispose();
+    _geminiModelCtrl.dispose();
+    _ollamaUrlCtrl.dispose();
+    _agyPathCtrl.dispose();
+    _claudePathCtrl.dispose();
+    _codexPathCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _discoverOllamaModels() async {
+    setState(() => _isLoadingModels = true);
+    final models = await widget.llmService.listOllamaModels(customUrl: _ollamaUrlCtrl.text);
+    if (!mounted) return;
+    setState(() {
+      _ollamaModels = models;
+      if (!_ollamaModels.contains(_selectedOllamaModel) && _ollamaModels.isNotEmpty) {
+        _selectedOllamaModel = _ollamaModels.first;
+      }
+      _isLoadingModels = false;
+    });
+  }
+
+  Future<void> _discoverAgyModels() async {
+    setState(() => _isLoadingModels = true);
+    final path = _agyPathCtrl.text.trim();
+    final models = await widget.llmService.cliService.listAgyModels(
+      customPath: path.isNotEmpty ? path : null,
+    );
+    if (!mounted) return;
+    setState(() {
+      _agyModels = models;
+      if (!_agyModels.any((m) => m.id == _selectedAgyModel) && _agyModels.isNotEmpty) {
+        _selectedAgyModel = _agyModels.first.id;
+      }
+      _isLoadingModels = false;
+    });
+  }
+
+  Future<void> _testCliConnection(CliType type, String rawPath) async {
+    setState(() {
+      _isTestingConnection = true;
+      _cliStatus = null;
+    });
+    final path = rawPath.trim();
+    final status = await widget.llmService.cliService.checkStatus(
+      type,
+      customPath: path.isNotEmpty ? path : null,
+    );
+    if (!mounted) return;
+    setState(() {
+      _cliStatus = status;
+      _isTestingConnection = false;
+    });
+    if (type == CliType.antigravity) {
+      await _discoverAgyModels();
+    }
+  }
+
+  Widget _buildCliSection({
+    required String title,
+    required CliType cliType,
+    required TextEditingController pathCtrl,
+    required String pathLabel,
+    required String pathHint,
+    required List<CliModelInfo> models,
+    required String selectedModel,
+    required ValueChanged<String> onModelChanged,
+    VoidCallback? onRefreshModels,
+  }) {
+    final effectiveModels = models.any((m) => m.id == selectedModel)
+        ? models
+        : [
+            CliModelInfo(id: selectedModel, name: selectedModel),
+            ...models,
+          ];
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(title),
+        const SizedBox(height: 8),
+        TextField(
+          controller: pathCtrl,
+          decoration: InputDecoration(
+            labelText: pathLabel,
+            hintText: pathHint,
+            border: const OutlineInputBorder(),
+            isDense: true,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            OutlinedButton.icon(
+              icon: _isTestingConnection
+                  ? const Icon(Icons.hourglass_empty, size: 16)
+                  : const Icon(Icons.network_check, size: 16),
+              label: Text(_isTestingConnection ? 'Testing...' : 'Test Connection'),
+              onPressed: _isTestingConnection
+                  ? null
+                  : () => _testCliConnection(cliType, pathCtrl.text),
+            ),
+            if (onRefreshModels != null) ...[
+              const SizedBox(width: 8),
+              IconButton(
+                tooltip: 'Discover Models',
+                icon: Icon(
+                  _isLoadingModels ? Icons.hourglass_empty : Icons.refresh,
+                  size: 18,
+                ),
+                onPressed: _isLoadingModels ? null : onRefreshModels,
+              ),
+            ],
+          ],
+        ),
+        if (_cliStatus != null) ...[
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: (_cliStatus!.isInstalled && _cliStatus!.isAuthenticated
+                      ? Colors.green
+                      : Colors.orange)
+                  .withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                color: _cliStatus!.isInstalled && _cliStatus!.isAuthenticated
+                    ? Colors.green
+                    : Colors.orange,
+              ),
+            ),
+            child: Text(
+              _cliStatus!.message,
+              style: const TextStyle(fontSize: 11),
+            ),
+          ),
+        ],
+        const SizedBox(height: 10),
+        const Text('Model:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+        const SizedBox(height: 4),
+        DropdownButton<String>(
+          isExpanded: true,
+          value: selectedModel,
+          items: effectiveModels
+              .map(
+                (m) => DropdownMenuItem<String>(
+                  value: m.id,
+                  child: Text(
+                    m.name == m.id ? m.id : '${m.name} (${m.id})',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              )
+              .toList(),
+          onChanged: (val) {
+            if (val != null) onModelChanged(val);
+          },
+        ),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final mode = widget.llmService.backendMode;
+
+    return AlertDialog(
+      title: const Text('AI Model Configuration'),
+      content: SingleChildScrollView(
+        child: SizedBox(
+          width: 420,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (mode == LlmBackendMode.geminiCloud) ...[
+                const Text('Google Gemini Cloud API Settings:'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _apiKeyCtrl,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Gemini API Key',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                    helperText: '🔒 Encrypted at rest (machine-bound)',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _geminiModelCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Gemini Model',
+                    hintText: 'gemini-3.8-flash',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ] else if (mode == LlmBackendMode.localGemma) ...[
+                const Text('Local / LAN Gemma (Ollama / LM Studio):'),
+                const SizedBox(height: 8),
+                TextField(
+                  controller: _ollamaUrlCtrl,
+                  decoration: const InputDecoration(
+                    labelText: 'Endpoint URL',
+                    hintText: 'http://localhost:11434',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: [
+                    const Expanded(
+                      child: Text('Discovered Model:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                    ),
+                    IconButton(
+                      tooltip: 'Discover Models',
+                      icon: Icon(
+                        _isLoadingModels ? Icons.hourglass_empty : Icons.refresh,
+                        size: 18,
+                      ),
+                      onPressed: _isLoadingModels ? null : _discoverOllamaModels,
+                    ),
+                  ],
+                ),
+                DropdownButton<String>(
+                  isExpanded: true,
+                  value: _ollamaModels.contains(_selectedOllamaModel)
+                      ? _selectedOllamaModel
+                      : _ollamaModels.first,
+                  items: _ollamaModels
+                      .map(
+                        (m) => DropdownMenuItem<String>(
+                          value: m,
+                          child: Text(m, style: const TextStyle(fontSize: 12)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() => _selectedOllamaModel = val);
+                    }
+                  },
+                ),
+              ] else if (mode == LlmBackendMode.antigravityCli) ...[
+                _buildCliSection(
+                  title: 'Antigravity CLI (agy) Settings:',
+                  cliType: CliType.antigravity,
+                  pathCtrl: _agyPathCtrl,
+                  pathLabel: 'Antigravity CLI Binary Path (agy)',
+                  pathHint: 'Auto-detect or /usr/local/bin/agy',
+                  models: _agyModels,
+                  selectedModel: _selectedAgyModel,
+                  onModelChanged: (val) => setState(() => _selectedAgyModel = val),
+                  onRefreshModels: _discoverAgyModels,
+                ),
+              ] else if (mode == LlmBackendMode.claudeCodeCli) ...[
+                _buildCliSection(
+                  title: 'Claude Code CLI (claude) Settings:',
+                  cliType: CliType.claudeCode,
+                  pathCtrl: _claudePathCtrl,
+                  pathLabel: 'Claude Code Binary Path (claude)',
+                  pathHint: 'Auto-detect or /usr/local/bin/claude',
+                  models: _claudeModels,
+                  selectedModel: _selectedClaudeModel,
+                  onModelChanged: (val) => setState(() => _selectedClaudeModel = val),
+                ),
+              ] else if (mode == LlmBackendMode.chatGptCodexCli) ...[
+                _buildCliSection(
+                  title: 'ChatGPT Codex CLI (codex) Settings:',
+                  cliType: CliType.codex,
+                  pathCtrl: _codexPathCtrl,
+                  pathLabel: 'Codex CLI Binary Path (codex)',
+                  pathHint: 'Auto-detect or /usr/local/bin/codex',
+                  models: _codexModels,
+                  selectedModel: _selectedCodexModel,
+                  onModelChanged: (val) => setState(() => _selectedCodexModel = val),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(context).pop(),
+          child: const Text('Close'),
+        ),
+        FilledButton(
+          onPressed: () {
+            final s = widget.llmService;
+            if (mode == LlmBackendMode.geminiCloud) {
+              s.geminiApiKey = _apiKeyCtrl.text.trim();
+              s.geminiModel = _geminiModelCtrl.text.trim().isNotEmpty
+                  ? _geminiModelCtrl.text.trim()
+                  : 'gemini-3.8-flash';
+            } else if (mode == LlmBackendMode.localGemma) {
+              s.ollamaUrl = _ollamaUrlCtrl.text.trim();
+              s.ollamaModel = _selectedOllamaModel;
+            } else if (mode == LlmBackendMode.antigravityCli) {
+              s.agyPath = _agyPathCtrl.text.trim();
+              s.agyModel = _selectedAgyModel;
+            } else if (mode == LlmBackendMode.claudeCodeCli) {
+              s.claudePath = _claudePathCtrl.text.trim();
+              s.claudeModel = _selectedClaudeModel;
+            } else if (mode == LlmBackendMode.chatGptCodexCli) {
+              s.codexPath = _codexPathCtrl.text.trim();
+              s.codexModel = _selectedCodexModel;
+            }
+            s.saveSettings();
+            Navigator.of(context).pop();
+            widget.onSaved();
+          },
+          child: const Text('Save'),
+        ),
+      ],
     );
   }
 }

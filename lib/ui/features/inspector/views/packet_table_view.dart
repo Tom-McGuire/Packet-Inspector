@@ -565,9 +565,65 @@ class _PacketTableViewState extends State<PacketTableView> {
 
   Widget _buildDeltaBadge(BuildContext context, int deltaUs) {
     final seconds = deltaUs / 1000000.0;
+    final formatted = '${seconds.toStringAsFixed(6)}s';
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    if (deltaUs > 0 && deltaUs < 50) {
+      // Micro-burst highlight (amber)
+      final fg = isDark ? Colors.amber.shade300 : Colors.amber.shade900;
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+          decoration: BoxDecoration(
+            color: Colors.amber.withValues(alpha: 0.18),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.amber.withValues(alpha: 0.55)),
+          ),
+          child: Text(
+            formatted,
+            style: TextStyle(
+              fontSize: 11,
+              fontFamily: 'monospace',
+              fontWeight: FontWeight.bold,
+              color: fg,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      );
+    }
+
+    if (deltaUs > 100000) {
+      // Stall highlight (red)
+      final fg = isDark ? Colors.red.shade300 : Colors.red.shade800;
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+          decoration: BoxDecoration(
+            color: Colors.red.withValues(alpha: 0.16),
+            borderRadius: BorderRadius.circular(4),
+            border: Border.all(color: Colors.red.withValues(alpha: 0.55)),
+          ),
+          child: Text(
+            formatted,
+            style: TextStyle(
+              fontSize: 11,
+              fontFamily: 'monospace',
+              fontWeight: FontWeight.bold,
+              color: fg,
+            ),
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      );
+    }
+
     return Text(
-      '${seconds.toStringAsFixed(6)}s',
+      formatted,
       style: const TextStyle(fontSize: 11, fontFamily: 'monospace'),
+      overflow: TextOverflow.ellipsis,
     );
   }
 

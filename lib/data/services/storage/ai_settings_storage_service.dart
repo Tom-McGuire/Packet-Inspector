@@ -3,7 +3,9 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:crypto/crypto.dart';
+import 'package:path/path.dart' as p;
 import '../ai/llm_provider_service.dart';
+import 'shared_device_database.dart';
 
 /// Model representing persisted AI settings.
 class AiSettings {
@@ -70,38 +72,51 @@ class AiSettingsStorageService {
   final Directory? storageDirectory;
   static const String _fileName = 'ai_settings.json';
 
-  File _resolveFile() {
+  /// Canonical path where `ai_settings.json` will be written.
+  String get resolvedFilePath => _resolveWriteFile().path;
+
+  File _resolveWriteFile() {
     if (storageDirectory != null) {
-      return File('${storageDirectory!.path}/$_fileName');
+      return File(p.join(storageDirectory!.path, _fileName));
+    }
+    return File(
+      p.join(SharedDeviceDatabase.getDefaultDirectoryPath(), _fileName),
+    );
+  }
+
+  File _resolveReadFile() {
+    if (storageDirectory != null) {
+      return File(p.join(storageDirectory!.path, _fileName));
     }
 
-    // 1. Current working directory
-    final cwdFile = File('./$_fileName');
+    // 1. Canonical cross-platform user data directory
+    final userFile = File(
+      p.join(SharedDeviceDatabase.getDefaultDirectoryPath(), _fileName),
+    );
+    if (userFile.existsSync()) return userFile;
+
+    // 2. Legacy read-only fallback for v0.6.0 upgrades
+    final cwdFile = File(p.join('.', _fileName));
     if (cwdFile.existsSync()) return cwdFile;
 
-    // 2. Next to executable
     try {
       final exeDir = File(Platform.resolvedExecutable).parent;
-      final exeFile = File('${exeDir.path}/$_fileName');
+      final exeFile = File(p.join(exeDir.path, _fileName));
       if (exeFile.existsSync()) return exeFile;
     } catch (_) {}
 
-    // 3. Release build path if running in project directory
-    final releaseFile = File('build/windows/x64/runner/Release/$_fileName');
+    final releaseFile = File(
+      p.join('build', 'windows', 'x64', 'runner', 'Release', _fileName),
+    );
     if (releaseFile.existsSync()) return releaseFile;
 
-    try {
-      final exeDir = File(Platform.resolvedExecutable).parent;
-      return File('${exeDir.path}/$_fileName');
-    } catch (_) {
-      return cwdFile;
-    }
+    return userFile;
   }
 
   /// Loads AI settings from disk. Decrypts the Gemini API key if present.
   AiSettings loadSettings() {
     try {
-      final file = _resolveFile();
+      final file = _resolveReadFile();
       if (!file.existsSync()) {
         return const AiSettings();
       }
@@ -152,7 +167,10 @@ class AiSettingsStorageService {
   /// Saves AI settings to disk. Encrypts the Gemini API key before persisting.
   void saveSettings(AiSettings settings) {
     try {
-      final file = _resolveFile();
+      final file = _resolveWriteFile();
+      if (!file.parent.existsSync()) {
+        file.parent.createSync(recursive: true);
+      }
       final encryptedApiKey = settings.geminiApiKey.isNotEmpty
           ? encryptSecret(settings.geminiApiKey)
           : '';

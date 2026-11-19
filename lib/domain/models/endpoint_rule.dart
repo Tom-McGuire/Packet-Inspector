@@ -33,12 +33,6 @@ class EndpointRule {
   /// Unique key for filtering: "ip:port" or "ip"
   String get filterKey => port != null ? '$ipAddress:$port' : ipAddress;
 
-  bool matches({required String ip, int? packetPort}) {
-    if (ip != ipAddress) return false;
-    if (port != null && packetPort != null && port != packetPort) return false;
-    return true;
-  }
-
   EndpointRule copyWith({
     String? id,
     String? name,

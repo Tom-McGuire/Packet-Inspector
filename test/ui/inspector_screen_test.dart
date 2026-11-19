@@ -19,7 +19,13 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    final repo = PacketRepository();
+    final tempDir = Directory.systemTemp.createTempSync('test_inspector_toolbar_');
+    addTearDown(() {
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+    });
+    final repo = PacketRepository(
+      storageService: ProtocolLibraryService(storageDirectory: tempDir),
+    );
     repo.loadDemoCapture();
     final vm = InspectorViewModel(repository: repo);
 
@@ -77,7 +83,13 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    final repo = PacketRepository();
+    final tempDir = Directory.systemTemp.createTempSync('test_inspector_toolbar_');
+    addTearDown(() {
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+    });
+    final repo = PacketRepository(
+      storageService: ProtocolLibraryService(storageDirectory: tempDir),
+    );
     repo.loadDemoCapture();
     final vm = InspectorViewModel(repository: repo);
 
@@ -137,7 +149,13 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    final repo = PacketRepository();
+    final tempDir = Directory.systemTemp.createTempSync('test_inspector_toolbar_');
+    addTearDown(() {
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+    });
+    final repo = PacketRepository(
+      storageService: ProtocolLibraryService(storageDirectory: tempDir),
+    );
     repo.loadDemoCapture();
     final vm = InspectorViewModel(repository: repo);
 
@@ -220,7 +238,13 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    final repo = PacketRepository();
+    final tempDir = Directory.systemTemp.createTempSync('test_inspector_toolbar_');
+    addTearDown(() {
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+    });
+    final repo = PacketRepository(
+      storageService: ProtocolLibraryService(storageDirectory: tempDir),
+    );
     repo.loadDemoCapture();
     final customRule = const CustomProtocolRule(
       id: 'custom_sacn_priority',
@@ -271,7 +295,13 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    final repo = PacketRepository();
+    final tempDir = Directory.systemTemp.createTempSync('test_inspector_toolbar_');
+    addTearDown(() {
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+    });
+    final repo = PacketRepository(
+      storageService: ProtocolLibraryService(storageDirectory: tempDir),
+    );
     repo.loadDemoCapture();
 
     // Add a sender and receiver to library
@@ -490,7 +520,13 @@ void main() {
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
 
-    final repo = PacketRepository();
+    final tempDir = Directory.systemTemp.createTempSync('test_inspector_toolbar_');
+    addTearDown(() {
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+    });
+    final repo = PacketRepository(
+      storageService: ProtocolLibraryService(storageDirectory: tempDir),
+    );
     repo.loadDemoCapture();
     final vm = InspectorViewModel(repository: repo);
 
@@ -517,6 +553,7 @@ void main() {
     // 2. Type in Source IP search box
     final srcField = find.widgetWithText(TextField, 'Source IP');
     await tester.enterText(srcField, '192.168.1.50');
+    await tester.pump(const Duration(milliseconds: 160));
     await tester.pumpAndSettle();
     expect(vm.sourceSearch, equals('192.168.1.50'));
 
@@ -534,6 +571,7 @@ void main() {
     // Enter destination to exclude
     final dstField = find.widgetWithText(TextField, 'Destination IP');
     await tester.enterText(dstField, '192.168.1.1');
+    await tester.pump(const Duration(milliseconds: 160));
     await tester.pumpAndSettle();
     expect(vm.destSearch, equals('192.168.1.1'));
 

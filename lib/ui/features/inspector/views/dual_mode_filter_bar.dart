@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:provider/provider.dart';
 import '../../../../domain/models/custom_protocol_rule.dart';
@@ -18,6 +19,8 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
   bool _isExpanded = true;
   late final TextEditingController _srcSearchController;
   late final TextEditingController _dstSearchController;
+  Timer? _srcDebounceTimer;
+  Timer? _dstDebounceTimer;
 
   @override
   void initState() {
@@ -29,6 +32,8 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
 
   @override
   void dispose() {
+    _srcDebounceTimer?.cancel();
+    _dstDebounceTimer?.cancel();
     _srcSearchController.dispose();
     _dstSearchController.dispose();
     super.dispose();
@@ -80,7 +85,16 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
                         controller: _srcSearchController,
                         isNot: vm.isSourceSearchNot,
                         onNotChanged: (val) => vm.setSourceSearchNot(val),
-                        onChanged: (val) => vm.setSourceSearch(val),
+                        onChanged: (val) {
+                          _srcDebounceTimer?.cancel();
+                          _srcDebounceTimer = Timer(const Duration(milliseconds: 150), () {
+                            if (mounted) vm.setSourceSearch(val);
+                          });
+                        },
+                        onClear: () {
+                          _srcDebounceTimer?.cancel();
+                          vm.setSourceSearch('');
+                        },
                       ),
                       const SizedBox(width: 10),
 
@@ -93,7 +107,16 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
                         controller: _dstSearchController,
                         isNot: vm.isDestSearchNot,
                         onNotChanged: (val) => vm.setDestSearchNot(val),
-                        onChanged: (val) => vm.setDestSearch(val),
+                        onChanged: (val) {
+                          _dstDebounceTimer?.cancel();
+                          _dstDebounceTimer = Timer(const Duration(milliseconds: 150), () {
+                            if (mounted) vm.setDestSearch(val);
+                          });
+                        },
+                        onClear: () {
+                          _dstDebounceTimer?.cancel();
+                          vm.setDestSearch('');
+                        },
                       ),
                       const SizedBox(width: 12),
 
@@ -110,6 +133,8 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
                           avatar: const Icon(Icons.close, size: 14),
                           label: const Text('Clear All Filters'),
                           onPressed: () {
+                            _srcDebounceTimer?.cancel();
+                            _dstDebounceTimer?.cancel();
                             _srcSearchController.clear();
                             _dstSearchController.clear();
                             vm.clearAllFilters();
@@ -165,6 +190,7 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
     required bool isNot,
     required ValueChanged<bool> onNotChanged,
     required ValueChanged<String> onChanged,
+    required VoidCallback onClear,
   }) {
     final theme = Theme.of(context);
     return Row(
@@ -223,7 +249,7 @@ class _DualModeFilterBarState extends State<DualModeFilterBar> {
                   splashRadius: 12,
                   onPressed: () {
                     controller.clear();
-                    onChanged('');
+                    onClear();
                   },
                 ),
             ],

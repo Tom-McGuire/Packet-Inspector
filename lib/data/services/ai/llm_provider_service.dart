@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'packet_ai_tools.dart';
 import 'ai_filter_references.dart';
 import 'cli_llm_service.dart';
+import '../diff/multi_capture_diff_engine.dart';
 import '../storage/ai_settings_storage_service.dart';
 
 enum LlmBackendMode {
@@ -12,21 +13,6 @@ enum LlmBackendMode {
   antigravityCli, // Antigravity CLI (agy -p)
   claudeCodeCli, // Claude Code CLI (claude -p)
   chatGptCodexCli, // OpenAI Codex CLI (codex exec)
-}
-
-/// Represents the 4-layer AI context scopes for packet inspection analysis.
-enum PacketAiContextScope {
-  /// Layer 1: Whole Capture file without any active filters.
-  wholeCapture,
-
-  /// Layer 2: Whole Capture file with current filters applied (DEFAULT).
-  filteredCapture,
-
-  /// Layer 3: Current view of packets (unfiltered page loaded in table).
-  inViewUnfiltered,
-
-  /// Layer 4: Current view of packets (filtered page loaded in table).
-  inViewFiltered,
 }
 
 class ChatMessage {
@@ -46,6 +32,7 @@ class LlmProviderService {
     required this.tools,
     this.storageService,
     CliLlmService? cliService,
+    this.diffEngineProvider,
     this.backendMode = LlmBackendMode.deterministicLocal,
     this.geminiApiKey = '',
     this.geminiModel = 'gemini-3.8-flash',
@@ -66,6 +53,7 @@ class LlmProviderService {
   final PacketAiTools tools;
   final AiSettingsStorageService? storageService;
   final CliLlmService cliService;
+  final MultiCaptureDiffEngine? Function()? diffEngineProvider;
   LlmBackendMode backendMode;
   String geminiApiKey;
   String geminiModel;
@@ -113,18 +101,31 @@ class LlmProviderService {
     ));
   }
 
-  Future<ChatMessage> sendMessage(String userMessage, {String? contextEnvelope}) async {
+  Future<ChatMessage> sendMessage(
+    String userMessage, {
+    String? contextEnvelope,
+    MultiCaptureDiffEngine? diffEngine,
+  }) async {
     history.add(ChatMessage(role: 'user', text: userMessage));
+    final effectiveDiffEngine = diffEngine ?? diffEngineProvider?.call();
 
     switch (backendMode) {
       case LlmBackendMode.deterministicLocal:
-        final reply = _handleDeterministic(userMessage, contextEnvelope: contextEnvelope);
+        final reply = _handleDeterministic(
+          userMessage,
+          contextEnvelope: contextEnvelope,
+          diffEngine: effectiveDiffEngine,
+        );
         history.add(reply);
         return reply;
 
       case LlmBackendMode.geminiCloud:
         try {
-          final reply = await _callGeminiApi(userMessage, contextEnvelope: contextEnvelope);
+          final reply = await _callGeminiApi(
+            userMessage,
+            contextEnvelope: contextEnvelope,
+            diffEngine: effectiveDiffEngine,
+          );
           history.add(reply);
           return reply;
         } catch (e) {
@@ -132,6 +133,7 @@ class LlmProviderService {
             userMessage,
             fallbackReason: e.toString(),
             contextEnvelope: contextEnvelope,
+            diffEngine: effectiveDiffEngine,
           );
           history.add(fallback);
           return fallback;
@@ -139,7 +141,11 @@ class LlmProviderService {
 
       case LlmBackendMode.localGemma:
         try {
-          final reply = await _callOllamaApi(userMessage, contextEnvelope: contextEnvelope);
+          final reply = await _callOllamaApi(
+            userMessage,
+            contextEnvelope: contextEnvelope,
+            diffEngine: effectiveDiffEngine,
+          );
           history.add(reply);
           return reply;
         } catch (e) {
@@ -147,6 +153,7 @@ class LlmProviderService {
             userMessage,
             fallbackReason: e.toString(),
             contextEnvelope: contextEnvelope,
+            diffEngine: effectiveDiffEngine,
           );
           history.add(fallback);
           return fallback;
@@ -154,7 +161,11 @@ class LlmProviderService {
 
       case LlmBackendMode.antigravityCli:
         try {
-          final reply = await _callAgyCli(userMessage, contextEnvelope: contextEnvelope);
+          final reply = await _callAgyCli(
+            userMessage,
+            contextEnvelope: contextEnvelope,
+            diffEngine: effectiveDiffEngine,
+          );
           history.add(reply);
           return reply;
         } catch (e) {
@@ -162,6 +173,7 @@ class LlmProviderService {
             userMessage,
             fallbackReason: e.toString(),
             contextEnvelope: contextEnvelope,
+            diffEngine: effectiveDiffEngine,
           );
           history.add(fallback);
           return fallback;
@@ -169,7 +181,11 @@ class LlmProviderService {
 
       case LlmBackendMode.claudeCodeCli:
         try {
-          final reply = await _callClaudeCli(userMessage, contextEnvelope: contextEnvelope);
+          final reply = await _callClaudeCli(
+            userMessage,
+            contextEnvelope: contextEnvelope,
+            diffEngine: effectiveDiffEngine,
+          );
           history.add(reply);
           return reply;
         } catch (e) {
@@ -177,6 +193,7 @@ class LlmProviderService {
             userMessage,
             fallbackReason: e.toString(),
             contextEnvelope: contextEnvelope,
+            diffEngine: effectiveDiffEngine,
           );
           history.add(fallback);
           return fallback;
@@ -184,7 +201,11 @@ class LlmProviderService {
 
       case LlmBackendMode.chatGptCodexCli:
         try {
-          final reply = await _callCodexCli(userMessage, contextEnvelope: contextEnvelope);
+          final reply = await _callCodexCli(
+            userMessage,
+            contextEnvelope: contextEnvelope,
+            diffEngine: effectiveDiffEngine,
+          );
           history.add(reply);
           return reply;
         } catch (e) {
@@ -192,6 +213,7 @@ class LlmProviderService {
             userMessage,
             fallbackReason: e.toString(),
             contextEnvelope: contextEnvelope,
+            diffEngine: effectiveDiffEngine,
           );
           history.add(fallback);
           return fallback;
@@ -203,15 +225,26 @@ class LlmProviderService {
     String prompt, {
     String? fallbackReason,
     String? contextEnvelope,
+    MultiCaptureDiffEngine? diffEngine,
   }) {
     final lower = prompt.toLowerCase();
     AiToolResult? toolResult;
     String textReply = '';
 
     final refs = AiFilterReferences.parse(prompt, tools.repository);
+    final isCompareQuery = lower.contains('compare') ||
+        lower.contains('diff') ||
+        lower.contains('drop') ||
+        lower.contains('hop') ||
+        lower.contains('skew') ||
+        lower.contains('mutat');
+
     if (refs.hasAnyReferences) {
-      toolResult = tools.generateFilteredReport(refs: refs, userPrompt: prompt);
+      toolResult = tools.generateFilteredReport(refs: refs);
       textReply = '${toolResult.summaryText}\n\n*Interactive filtered traffic card rendered below. Click "Apply to Filter Bar" to isolate this traffic on your main inspector screen.*';
+    } else if (diffEngine != null && diffEngine.slots.length >= 2 && isCompareQuery) {
+      toolResult = tools.compareCapturesSummary(diffEngine);
+      textReply = '${toolResult.summaryText}\n\n*Interactive multi-capture comparison card rendered below.*';
     } else if (lower.contains('top') || lower.contains('talker') || lower.contains('conversation')) {
       final metric = lower.contains('pkt') || lower.contains('packet') ? 'packets' : 'bytes';
       final unexpected = lower.contains('unexpected');
@@ -246,19 +279,50 @@ class LlmProviderService {
     );
   }
 
-  Future<ChatMessage> _callGeminiApi(String prompt, {String? contextEnvelope}) async {
+  String _buildEnrichedPrompt(
+    String prompt,
+    AiToolResult? localToolResult, {
+    String? contextEnvelope,
+  }) {
+    final refs = AiFilterReferences.parse(prompt, tools.repository);
+    final sb = StringBuffer(prompt);
+
+    if (refs.hasAnyReferences) {
+      sb.write('\n\n[Context from Packet Inspector Library]:\n${refs.buildLibraryContextSummary()}');
+    }
+    if (contextEnvelope != null && contextEnvelope.trim().isNotEmpty) {
+      sb.write('\n\n$contextEnvelope');
+    }
+
+    final captureSummary = tools.getCaptureSummary().summaryText;
+    sb.write('\n\n[Deterministic Capture Summary]:\n$captureSummary');
+
+    if (localToolResult != null && localToolResult.toolName != 'get_capture_summary') {
+      sb.write('\n\n[Deterministic Tool Analysis (${localToolResult.toolName})]:\n${localToolResult.summaryText}');
+    }
+
+    return sb.toString();
+  }
+
+  Future<ChatMessage> _callGeminiApi(
+    String prompt, {
+    String? contextEnvelope,
+    MultiCaptureDiffEngine? diffEngine,
+  }) async {
     if (geminiApiKey.isEmpty) {
       throw Exception('Gemini API Key is empty. Please enter your API key in Settings.');
     }
 
-    final refs = AiFilterReferences.parse(prompt, tools.repository);
-    String enrichedPrompt = prompt;
-    if (refs.hasAnyReferences) {
-      enrichedPrompt = '$prompt\n\n[Context from Packet Inspector Library]:\n${refs.buildLibraryContextSummary()}';
-    }
-    if (contextEnvelope != null && contextEnvelope.trim().isNotEmpty) {
-      enrichedPrompt = '$enrichedPrompt\n\n$contextEnvelope';
-    }
+    final localResult = _handleDeterministic(
+      prompt,
+      contextEnvelope: contextEnvelope,
+      diffEngine: diffEngine,
+    );
+    final enrichedPrompt = _buildEnrichedPrompt(
+      prompt,
+      localResult.toolResult,
+      contextEnvelope: contextEnvelope,
+    );
 
     final modelName = geminiModel.isNotEmpty ? geminiModel : 'gemini-3.8-flash';
     final url = Uri.parse(
@@ -296,9 +360,6 @@ class LlmProviderService {
     final candidates = data['candidates'] as List<dynamic>?;
     final text = candidates?.first['content']['parts'][0]['text'] as String? ?? 'No response text.';
 
-    // Execute relevant tool to pair with the AI answer
-    final localResult = _handleDeterministic(prompt, contextEnvelope: contextEnvelope);
-
     return ChatMessage(
       role: 'assistant',
       text: '$text\n\n---\n${localResult.text}',
@@ -306,18 +367,24 @@ class LlmProviderService {
     );
   }
 
-  Future<ChatMessage> _callOllamaApi(String prompt, {String? contextEnvelope}) async {
+  Future<ChatMessage> _callOllamaApi(
+    String prompt, {
+    String? contextEnvelope,
+    MultiCaptureDiffEngine? diffEngine,
+  }) async {
     final cleanUrl = ollamaUrl.endsWith('/') ? ollamaUrl.substring(0, ollamaUrl.length - 1) : ollamaUrl;
     final endpoint = Uri.parse('$cleanUrl/v1/chat/completions');
 
-    final refs = AiFilterReferences.parse(prompt, tools.repository);
-    String enrichedPrompt = prompt;
-    if (refs.hasAnyReferences) {
-      enrichedPrompt = '$prompt\n\n[Context from Packet Inspector Library]:\n${refs.buildLibraryContextSummary()}';
-    }
-    if (contextEnvelope != null && contextEnvelope.trim().isNotEmpty) {
-      enrichedPrompt = '$enrichedPrompt\n\n$contextEnvelope';
-    }
+    final localResult = _handleDeterministic(
+      prompt,
+      contextEnvelope: contextEnvelope,
+      diffEngine: diffEngine,
+    );
+    final enrichedPrompt = _buildEnrichedPrompt(
+      prompt,
+      localResult.toolResult,
+      contextEnvelope: contextEnvelope,
+    );
 
     final payload = {
       'model': ollamaModel,
@@ -341,7 +408,6 @@ class LlmProviderService {
     final choices = data['choices'] as List<dynamic>?;
     final text = choices?.first['message']['content'] as String? ?? 'No response';
 
-    final localResult = _handleDeterministic(prompt, contextEnvelope: contextEnvelope);
     return ChatMessage(
       role: 'assistant',
       text: '$text\n\n---\n${localResult.text}',
@@ -349,15 +415,21 @@ class LlmProviderService {
     );
   }
 
-  Future<ChatMessage> _callAgyCli(String prompt, {String? contextEnvelope}) async {
-    final refs = AiFilterReferences.parse(prompt, tools.repository);
-    String enrichedPrompt = prompt;
-    if (refs.hasAnyReferences) {
-      enrichedPrompt = '$prompt\n\n[Context from Packet Inspector Library]:\n${refs.buildLibraryContextSummary()}';
-    }
-    if (contextEnvelope != null && contextEnvelope.trim().isNotEmpty) {
-      enrichedPrompt = '$enrichedPrompt\n\n$contextEnvelope';
-    }
+  Future<ChatMessage> _callAgyCli(
+    String prompt, {
+    String? contextEnvelope,
+    MultiCaptureDiffEngine? diffEngine,
+  }) async {
+    final localResult = _handleDeterministic(
+      prompt,
+      contextEnvelope: contextEnvelope,
+      diffEngine: diffEngine,
+    );
+    final enrichedPrompt = _buildEnrichedPrompt(
+      prompt,
+      localResult.toolResult,
+      contextEnvelope: contextEnvelope,
+    );
 
     final fullPrompt = 'You are Packet Inspector AI, an expert network analyst. Analyze traffic stats accurately and provide concise network insights.\n\nUser Question:\n$enrichedPrompt';
     final text = await cliService.queryAgy(
@@ -366,7 +438,6 @@ class LlmProviderService {
       customPath: agyPath.isNotEmpty ? agyPath : null,
     );
 
-    final localResult = _handleDeterministic(prompt, contextEnvelope: contextEnvelope);
     return ChatMessage(
       role: 'assistant',
       text: '$text\n\n---\n${localResult.text}',
@@ -374,15 +445,21 @@ class LlmProviderService {
     );
   }
 
-  Future<ChatMessage> _callClaudeCli(String prompt, {String? contextEnvelope}) async {
-    final refs = AiFilterReferences.parse(prompt, tools.repository);
-    String enrichedPrompt = prompt;
-    if (refs.hasAnyReferences) {
-      enrichedPrompt = '$prompt\n\n[Context from Packet Inspector Library]:\n${refs.buildLibraryContextSummary()}';
-    }
-    if (contextEnvelope != null && contextEnvelope.trim().isNotEmpty) {
-      enrichedPrompt = '$enrichedPrompt\n\n$contextEnvelope';
-    }
+  Future<ChatMessage> _callClaudeCli(
+    String prompt, {
+    String? contextEnvelope,
+    MultiCaptureDiffEngine? diffEngine,
+  }) async {
+    final localResult = _handleDeterministic(
+      prompt,
+      contextEnvelope: contextEnvelope,
+      diffEngine: diffEngine,
+    );
+    final enrichedPrompt = _buildEnrichedPrompt(
+      prompt,
+      localResult.toolResult,
+      contextEnvelope: contextEnvelope,
+    );
 
     final fullPrompt = 'You are Packet Inspector AI, an expert network analyst. Analyze traffic stats accurately and provide concise network insights.\n\nUser Question:\n$enrichedPrompt';
     final text = await cliService.queryClaude(
@@ -391,7 +468,6 @@ class LlmProviderService {
       customPath: claudePath.isNotEmpty ? claudePath : null,
     );
 
-    final localResult = _handleDeterministic(prompt, contextEnvelope: contextEnvelope);
     return ChatMessage(
       role: 'assistant',
       text: '$text\n\n---\n${localResult.text}',
@@ -399,15 +475,21 @@ class LlmProviderService {
     );
   }
 
-  Future<ChatMessage> _callCodexCli(String prompt, {String? contextEnvelope}) async {
-    final refs = AiFilterReferences.parse(prompt, tools.repository);
-    String enrichedPrompt = prompt;
-    if (refs.hasAnyReferences) {
-      enrichedPrompt = '$prompt\n\n[Context from Packet Inspector Library]:\n${refs.buildLibraryContextSummary()}';
-    }
-    if (contextEnvelope != null && contextEnvelope.trim().isNotEmpty) {
-      enrichedPrompt = '$enrichedPrompt\n\n$contextEnvelope';
-    }
+  Future<ChatMessage> _callCodexCli(
+    String prompt, {
+    String? contextEnvelope,
+    MultiCaptureDiffEngine? diffEngine,
+  }) async {
+    final localResult = _handleDeterministic(
+      prompt,
+      contextEnvelope: contextEnvelope,
+      diffEngine: diffEngine,
+    );
+    final enrichedPrompt = _buildEnrichedPrompt(
+      prompt,
+      localResult.toolResult,
+      contextEnvelope: contextEnvelope,
+    );
 
     final fullPrompt = 'You are Packet Inspector AI, an expert network analyst. Analyze traffic stats accurately and provide concise network insights.\n\nUser Question:\n$enrichedPrompt';
     final text = await cliService.queryCodex(
@@ -416,7 +498,6 @@ class LlmProviderService {
       customPath: codexPath.isNotEmpty ? codexPath : null,
     );
 
-    final localResult = _handleDeterministic(prompt, contextEnvelope: contextEnvelope);
     return ChatMessage(
       role: 'assistant',
       text: '$text\n\n---\n${localResult.text}',

@@ -27,11 +27,11 @@ class HexDiffInspector extends StatelessWidget {
     }
 
     final hopIndex = vm.selectedHopForHexDiff.clamp(1, slots.length - 1);
-    final baseMatch = record.hopMatches[0];
+    final hasBaseline = record.baselineCaptureIndex == 0;
     final hopMatch = record.hopMatches[hopIndex];
 
-    final baseBytes = baseMatch != null
-        ? vm.getRawBytes(0, baseMatch.frameNumber)
+    final baseBytes = hasBaseline
+        ? vm.getRawBytes(0, record.baselineFrameNumber)
         : null;
     final hopBytes = hopMatch != null
         ? vm.getRawBytes(hopIndex, hopMatch.frameNumber)
@@ -73,7 +73,7 @@ class HexDiffInspector extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  'Hex Diff Inspector — Row #${record.rowIndex + 1} (${record.protocolName})',
+                  'Hex Diff Inspector — Row #${record.rowIndex} (${record.protocolName})',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -151,8 +151,8 @@ class HexDiffInspector extends StatelessWidget {
               children: [
                 Expanded(
                   child: _buildPane(
-                    title: baseMatch != null
-                        ? 'A: ${slots[0].label} (Frame #${baseMatch.frameNumber}, DSCP=${baseMatch.dscpValue ?? '-'}, VLAN=${baseMatch.vlanId ?? '-'})'
+                    title: hasBaseline
+                        ? 'A: ${slots[0].label} (Frame #${record.baselineFrameNumber}, DSCP=${record.baselineDscp ?? '-'}, VLAN=${record.baselineVlanId ?? '-'})'
                         : 'A: ${slots[0].label} (MISSING)',
                     bytes: baseBytes,
                     diffOffsets: diffOffsets,

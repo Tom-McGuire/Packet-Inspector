@@ -14,8 +14,6 @@ class CaptureSlot {
   final int packetCount;
   final int clockOffsetUs;
 
-  bool get isBaseline => captureIndex == 0;
-
   double get clockOffsetMs => clockOffsetUs / 1000.0;
 
   String get formattedClockOffset {

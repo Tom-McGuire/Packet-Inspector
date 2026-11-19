@@ -8,12 +8,6 @@ class AppTheme {
   /// Global runtime toggle updated when `SharedDeviceDatabase` changes.
   static bool isDark = true;
 
-  /// Active theme mode string (`'dark'` or `'light'`).
-  static String get themeMode => isDark ? 'dark' : 'light';
-
-  /// Updates [isDark] from a persisted theme mode string.
-  static void applyThemeMode(String mode) => isDark = (mode != 'light');
-
   // --- Surface & Structural Tokens ---
   static Color get scaffoldBg =>
       isDark ? const Color(0xFF141414) : const Color(0xFFF3F4F6);
@@ -23,9 +17,6 @@ class AppTheme {
 
   static Color get surfaceHigh =>
       isDark ? const Color(0xFF252526) : const Color(0xFFF9FAFB);
-
-  static Color get surfaceElevated =>
-      isDark ? const Color(0xFF2D2D2D) : const Color(0xFFFFFFFF);
 
   static Color get border =>
       isDark ? const Color(0xFF2C2C2C) : const Color(0xFFE5E7EB);
@@ -53,12 +44,7 @@ class AppTheme {
   static Color get warning =>
       isDark ? const Color(0xFFF59E0B) : const Color(0xFFD97706);
 
-  static Color get info =>
-      isDark ? const Color(0xFF3B82F6) : const Color(0xFF2563EB);
-
   // --- ThemeData Builders ---
-  static ThemeData get currentTheme => isDark ? darkTheme() : lightTheme();
-
   static ThemeData darkTheme() {
     final prev = isDark;
     isDark = true;

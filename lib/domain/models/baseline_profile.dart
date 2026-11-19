@@ -49,7 +49,7 @@ class BaselineProfile {
       return TriageStatus.expected;
     }
     for (final subnet in expectedSubnets) {
-      if (srcIp.startsWith(subnet) && dstIp.startsWith(subnet)) {
+      if (srcIp.startsWith(subnet) || dstIp.startsWith(subnet)) {
         return TriageStatus.expected;
       }
     }

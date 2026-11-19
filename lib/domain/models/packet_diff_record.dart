@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 /// Fault / correlation classification for a packet across captures.
 enum DiffStatus {
   ok,
@@ -37,7 +35,6 @@ class HopMatch {
     required this.transitDeltaUs,
     this.dscpValue,
     this.vlanId,
-    this.rawBytes,
   });
 
   final int captureIndex;
@@ -46,9 +43,6 @@ class HopMatch {
   final int transitDeltaUs;
   final int? dscpValue;
   final int? vlanId;
-  final Uint8List? rawBytes;
-
-  double get transitDeltaMs => transitDeltaUs / 1000.0;
 }
 
 /// A unified correlated packet row spanning Baseline Capture 0 and hops 1..N.
@@ -75,7 +69,6 @@ class PacketDiffRecord {
     required this.primaryStatus,
     this.maxTransitDeltaUs,
     required this.statusDetail,
-    this.baselineRawBytes,
   });
 
   final int rowIndex;
@@ -99,19 +92,11 @@ class PacketDiffRecord {
   final DiffStatus primaryStatus;
   final int? maxTransitDeltaUs;
   final String statusDetail;
-  final Uint8List? baselineRawBytes;
 
   String get flowDisplay {
     final src = srcPort != null ? '$srcIp:$srcPort' : srcIp;
     final dst = dstPort != null ? '$dstIp:$dstPort' : dstIp;
     return '$src -> $dst';
-  }
-
-  String get formattedTransitDelta {
-    if (maxTransitDeltaUs == null) return '—';
-    final ms = maxTransitDeltaUs! / 1000.0;
-    final sign = ms >= 0 ? '+' : '';
-    return '$sign${ms.toStringAsFixed(2)} ms';
   }
 
   static String dscpLabel(int? dscp) {

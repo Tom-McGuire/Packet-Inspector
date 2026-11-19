@@ -23,8 +23,20 @@ class AddProtocolDialog extends StatefulWidget {
 class _AddProtocolDialogState extends State<AddProtocolDialog> {
   late final TextEditingController _nameCtrl;
   late final TextEditingController _portCtrl;
+  late final TextEditingController _ipFilterCtrl;
   late final TextEditingController _magicOffsetCtrl;
   late final TextEditingController _magicHexCtrl;
+
+  static const List<int> _presetColors = [
+    0xFF4CAF50, // Green
+    0xFF2196F3, // Blue
+    0xFF9C27B0, // Purple
+    0xFFFF9800, // Orange
+    0xFF00BCD4, // Cyan
+    0xFFE91E63, // Pink
+    0xFFFF5722, // Deep Orange
+    0xFF607D8B, // Blue Grey
+  ];
 
   int _selectedIpProto = 17; // Default UDP
   PortMatchDirection _portDirection = PortMatchDirection.either;
@@ -40,6 +52,7 @@ class _AddProtocolDialogState extends State<AddProtocolDialog> {
     if (rule != null) {
       _nameCtrl = TextEditingController(text: rule.name);
       _portCtrl = TextEditingController(text: rule.port?.toString() ?? '');
+      _ipFilterCtrl = TextEditingController(text: rule.ipAddressFilter ?? '');
       _magicOffsetCtrl = TextEditingController(text: (rule.magicBytesOffset ?? 0).toString());
       _magicHexCtrl = TextEditingController(
         text: rule.magicBytesHex != null
@@ -55,6 +68,7 @@ class _AddProtocolDialogState extends State<AddProtocolDialog> {
       final p = widget.prefillPacket;
       _nameCtrl = TextEditingController(text: p != null ? 'Custom Proto ${p.detectedProtocol}' : 'My Custom Protocol');
       _portCtrl = TextEditingController(text: p?.srcPort?.toString() ?? p?.dstPort?.toString() ?? '45820');
+      _ipFilterCtrl = TextEditingController();
       _magicOffsetCtrl = TextEditingController(text: (widget.prefillMagicOffset ?? 0).toString());
       _magicHexCtrl = TextEditingController(text: widget.prefillMagicHex ?? '');
 
@@ -68,6 +82,7 @@ class _AddProtocolDialogState extends State<AddProtocolDialog> {
   void dispose() {
     _nameCtrl.dispose();
     _portCtrl.dispose();
+    _ipFilterCtrl.dispose();
     _magicOffsetCtrl.dispose();
     _magicHexCtrl.dispose();
     super.dispose();
@@ -117,6 +132,45 @@ class _AddProtocolDialogState extends State<AddProtocolDialog> {
                         border: OutlineInputBorder(),
                         isDense: true,
                       ),
+                    ),
+                    const SizedBox(height: 12),
+
+                    // Color Preset Selector
+                    const Text('Color Badge', style: TextStyle(fontWeight: FontWeight.w500, fontSize: 13)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      children: _presetColors.map((colorHex) {
+                        final isSelected = _colorHex == colorHex;
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(16),
+                          onTap: () => setState(() => _colorHex = colorHex),
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              color: Color(colorHex),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isSelected ? Colors.white : Colors.transparent,
+                                width: 2.5,
+                              ),
+                              boxShadow: isSelected
+                                  ? [
+                                      BoxShadow(
+                                        color: Colors.black.withAlpha(80),
+                                        blurRadius: 4,
+                                        spreadRadius: 1,
+                                      )
+                                    ]
+                                  : null,
+                            ),
+                            child: isSelected
+                                ? const Icon(Icons.check, size: 16, color: Colors.white)
+                                : null,
+                          ),
+                        );
+                      }).toList(),
                     ),
                     const SizedBox(height: 16),
 
@@ -182,6 +236,16 @@ class _AddProtocolDialogState extends State<AddProtocolDialog> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _ipFilterCtrl,
+                      decoration: const InputDecoration(
+                        labelText: 'IP Address Filter (Optional)',
+                        hintText: 'e.g. 192.168.1.50 or 10.0.0.',
+                        border: OutlineInputBorder(),
+                        isDense: true,
+                      ),
                     ),
                     const SizedBox(height: 16),
 
@@ -388,6 +452,8 @@ class _AddProtocolDialogState extends State<AddProtocolDialog> {
     if (name.isEmpty) return;
 
     final port = int.tryParse(_portCtrl.text.trim());
+    final ipFilterRaw = _ipFilterCtrl.text.trim();
+    final ipAddressFilter = ipFilterRaw.isEmpty ? null : ipFilterRaw;
     final magicOffset = int.tryParse(_magicOffsetCtrl.text.trim()) ?? 0;
 
     List<int>? magicBytes;
@@ -415,6 +481,7 @@ class _AddProtocolDialogState extends State<AddProtocolDialog> {
       ipProtocol: _selectedIpProto,
       port: port,
       portDirection: _portDirection,
+      ipAddressFilter: ipAddressFilter,
       magicBytesOffset: magicOffset,
       magicBytesHex: magicBytes,
       fieldSlices: _fieldSlices,

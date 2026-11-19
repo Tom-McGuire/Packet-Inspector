@@ -92,7 +92,6 @@ class PcapBinaryReader {
     final packets = <RawCapturedPacket>[];
 
     while (offset + 16 <= bytes.length) {
-      final headerOffset = offset;
       final tsSec = bd.getUint32(offset, endian);
       final tsFraction = bd.getUint32(offset + 4, endian);
       final inclLen = bd.getUint32(offset + 8, endian);
@@ -117,7 +116,7 @@ class PcapBinaryReader {
         capturedLength: inclLen,
         originalLength: origLen,
         linkType: linkType,
-        fileByteOffset: headerOffset,
+        fileByteOffset: offset,
         data: packetData,
       ));
 
@@ -131,12 +130,10 @@ class PcapBinaryReader {
     int offset = 0;
     int packetNo = 1;
     Endian currentEndian = Endian.little;
-    int currentLinkType = 1; // Default Ethernet
-    int tsResolution = 1000000; // Default microsecond resolution (10^-6)
+    final interfaces = <({int linkType, int tsResolution, int snapLen})>[];
     final packets = <RawCapturedPacket>[];
 
     while (offset + 8 <= bytes.length) {
-      final blockOffset = offset;
       var bd = ByteData.sublistView(bytes, offset, offset + 8);
       var blockType = bd.getUint32(0, currentEndian);
       var blockTotalLength = bd.getUint32(4, currentEndian);
@@ -152,6 +149,7 @@ class PcapBinaryReader {
         bd = ByteData.sublistView(bytes, offset, offset + 8);
         blockType = bd.getUint32(0, currentEndian);
         blockTotalLength = bd.getUint32(4, currentEndian);
+        interfaces.clear();
       }
 
       if (blockTotalLength < 12 || offset + blockTotalLength > bytes.length) {
@@ -163,7 +161,9 @@ class PcapBinaryReader {
       if (blockType == 0x00000001) {
         // Interface Description Block (IDB)
         if (blockTotalLength >= 16) {
-          currentLinkType = blockBd.getUint16(8, currentEndian);
+          final idbLinkType = blockBd.getUint16(8, currentEndian);
+          final idbSnapLen = blockBd.getUint32(12, currentEndian);
+          int idbTsResolution = 1000000; // Default microsecond resolution (10^-6)
           // Parse options for if_tsresol
           int optOffset = 16;
           while (optOffset + 4 <= blockTotalLength - 4) {
@@ -171,56 +171,68 @@ class PcapBinaryReader {
             final optLen = blockBd.getUint16(optOffset + 2, currentEndian);
             final optValOffset = optOffset + 4;
             if (optCode == 0) break; // End of options
-            if (optCode == 9 && optLen >= 1 && optValOffset < blockTotalLength) {
+            if (optCode == 9 && optLen >= 1 && optValOffset + optLen <= blockTotalLength - 4) {
               // if_tsresol
               final resolCode = blockBd.getUint8(optValOffset);
               final isPowerOfTwo = (resolCode & 0x80) != 0;
               final val = resolCode & 0x7F;
               if (isPowerOfTwo) {
-                tsResolution = 1 << val;
-              } else {
-                int r = 1;
-                for (int i = 0; i < val; i++) {
-                  r *= 10;
+                if (val < 63) {
+                  idbTsResolution = 1 << val;
                 }
-                tsResolution = r;
+              } else {
+                if (val <= 18) {
+                  int r = 1;
+                  for (int i = 0; i < val; i++) {
+                    r *= 10;
+                  }
+                  idbTsResolution = r;
+                }
               }
             }
             final paddedLen = (optLen + 3) & ~3;
             optOffset += 4 + paddedLen;
           }
+          interfaces.add((
+            linkType: idbLinkType,
+            tsResolution: idbTsResolution,
+            snapLen: idbSnapLen,
+          ));
         }
       } else if (blockType == 0x00000006) {
         // Enhanced Packet Block (EPB)
         if (blockTotalLength >= 32) {
-          // final ifId = blockBd.getUint32(8, currentEndian);
+          final ifId = blockBd.getUint32(8, currentEndian);
+          final iface = ifId < interfaces.length
+              ? interfaces[ifId]
+              : (linkType: 1, tsResolution: 1000000, snapLen: 0);
           final tsHigh = blockBd.getUint32(12, currentEndian);
           final tsLow = blockBd.getUint32(16, currentEndian);
           final capLen = blockBd.getUint32(20, currentEndian);
           final origLen = blockBd.getUint32(24, currentEndian);
 
-          final rawTs = (tsHigh << 32) | tsLow;
+          final rawTs = (BigInt.from(tsHigh) << 32) | BigInt.from(tsLow);
           final int timestampUs;
-          if (tsResolution == 1000000) {
-            timestampUs = rawTs;
-          } else if (tsResolution == 1000000000) {
-            timestampUs = rawTs ~/ 1000;
-          } else if (tsResolution > 0) {
-            timestampUs = ((rawTs * 1000000) / tsResolution).round();
+          if (iface.tsResolution == 1000000) {
+            timestampUs = rawTs.toInt();
+          } else if (iface.tsResolution == 1000000000) {
+            timestampUs = (rawTs ~/ BigInt.from(1000)).toInt();
+          } else if (iface.tsResolution > 0) {
+            timestampUs = ((rawTs * BigInt.from(1000000)) ~/ BigInt.from(iface.tsResolution)).toInt();
           } else {
-            timestampUs = rawTs;
+            timestampUs = rawTs.toInt();
           }
 
           final dataOffset = offset + 28;
-          if (dataOffset + capLen <= bytes.length) {
+          if (dataOffset + capLen <= offset + blockTotalLength - 4 && dataOffset + capLen <= bytes.length) {
             final packetData = Uint8List.sublistView(bytes, dataOffset, dataOffset + capLen);
             packets.add(RawCapturedPacket(
               packetNo: packetNo++,
               timestampUs: timestampUs,
               capturedLength: capLen,
               originalLength: origLen,
-              linkType: currentLinkType,
-              fileByteOffset: blockOffset,
+              linkType: iface.linkType,
+              fileByteOffset: dataOffset,
               data: packetData,
             ));
           }
@@ -228,18 +240,27 @@ class PcapBinaryReader {
       } else if (blockType == 0x00000003) {
         // Simple Packet Block (SPB)
         if (blockTotalLength >= 16) {
+          final iface = interfaces.isNotEmpty
+              ? interfaces[0]
+              : (linkType: 1, tsResolution: 1000000, snapLen: 0);
           final origLen = blockBd.getUint32(8, currentEndian);
-          final capLen = blockTotalLength - 16;
+          final maxBlockDataLen = blockTotalLength - 16;
+          final logicalCapLen =
+              (iface.snapLen > 0 && iface.snapLen < origLen) ? iface.snapLen : origLen;
+          final capLen =
+              logicalCapLen < maxBlockDataLen ? logicalCapLen : maxBlockDataLen;
           final dataOffset = offset + 12;
-          if (dataOffset + capLen <= bytes.length) {
+          if (capLen >= 0 &&
+              dataOffset + capLen <= offset + blockTotalLength - 4 &&
+              dataOffset + capLen <= bytes.length) {
             final packetData = Uint8List.sublistView(bytes, dataOffset, dataOffset + capLen);
             packets.add(RawCapturedPacket(
               packetNo: packetNo++,
               timestampUs: 0,
               capturedLength: capLen,
               originalLength: origLen,
-              linkType: currentLinkType,
-              fileByteOffset: blockOffset,
+              linkType: iface.linkType,
+              fileByteOffset: dataOffset,
               data: packetData,
             ));
           }

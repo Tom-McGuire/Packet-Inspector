@@ -87,7 +87,7 @@ class CliLlmService {
     if (customPath != null && customPath.trim().isNotEmpty) {
       final trimmed = customPath.trim();
       final file = File(trimmed);
-      if (await file.exists()) {
+      if (file.existsSync()) {
         return file.path;
       }
       // If user specified a bare command name without path separators, try looking it up
@@ -158,7 +158,7 @@ class CliLlmService {
     }
 
     for (final candidate in candidates) {
-      if (await File(candidate).exists()) {
+      if (File(candidate).existsSync()) {
         return candidate;
       }
     }
@@ -179,7 +179,7 @@ class CliLlmService {
         final out = res.stdout.toString().trim();
         if (out.isNotEmpty) {
           final firstLine = out.split(RegExp(r'[\r\n]+')).first.trim();
-          if (await File(firstLine).exists()) {
+          if (File(firstLine).existsSync()) {
             return firstLine;
           }
           return firstLine;

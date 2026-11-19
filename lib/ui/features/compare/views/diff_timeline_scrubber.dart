@@ -51,7 +51,7 @@ class DiffTimelineScrubber extends StatelessWidget {
                     final ratio =
                         (details.localPosition.dx / width).clamp(0.0, 0.9999);
                     final targetIdx = (ratio * records.length).floor();
-                    vm.jumpToRowIndex(targetIdx);
+                    vm.jumpToRowIndex(records[targetIdx].rowIndex);
                   },
                   child: CustomPaint(
                     size: Size(width, 24),

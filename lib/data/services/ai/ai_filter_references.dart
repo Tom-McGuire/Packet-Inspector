@@ -30,15 +30,6 @@ class AiFilterReferences {
   final List<EndpointRule> matchedReceivers;
   final List<String> unmatchedReceiverIps;
 
-  List<String> get rawSources => rawSenders;
-  List<String> get rawDestinations => rawReceivers;
-  List<EndpointRule> get matchedSources => matchedSenders;
-  List<EndpointRule> get matchedDestinations => matchedReceivers;
-  List<String> get unmatchedSourceIps => unmatchedSenderIps;
-  List<String> get unmatchedDestinationIps => unmatchedReceiverIps;
-  Set<String> get allSourceKeys => allSenderKeys;
-  Set<String> get allDestinationKeys => allReceiverKeys;
-
   bool get hasAnyReferences =>
       rawProtocols.isNotEmpty || rawSenders.isNotEmpty || rawReceivers.isNotEmpty;
 

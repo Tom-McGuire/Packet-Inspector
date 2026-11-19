@@ -22,6 +22,14 @@ class CaptureCompareViewModel extends ChangeNotifier {
   int? _selectedFlowHash;
   double _latencyThresholdMs = 5.0;
 
+  List<PacketDiffRecord> _cachedAllFilteredByMode = const [];
+  int _cachedDroppedCount = 0;
+  int _cachedSourceGapCount = 0;
+  int _cachedOutOfOrderCount = 0;
+  int _cachedMutatedCount = 0;
+  int _cachedSpikeCount = 0;
+  Map<int, int> _cachedDeliveredCountsByHop = const {};
+
   List<PacketDiffRecord> _visibleRecords = const [];
   PacketDiffRecord? _selectedRecord;
   int _selectedHopForHexDiff = 1;
@@ -44,26 +52,15 @@ class CaptureCompareViewModel extends ChangeNotifier {
   int? get requestScrollToRowIndex => _requestScrollToRowIndex;
 
   // Summary counts over the active noise filter (ignoring status chip filter)
-  List<PacketDiffRecord> get _allFilteredByMode => _engine.queryDiffRecords(
-        filterMode: _filterMode,
-        selectedFlowHash: _selectedFlowHash,
-        statusFilter: DiffStatusFilter.all,
-      );
-
-  int get totalModePacketCount => _allFilteredByMode.length;
-  int get droppedCount =>
-      _allFilteredByMode.where((r) => r.statuses.contains(DiffStatus.dropped)).length;
-  int get sourceGapCount =>
-      _allFilteredByMode.where((r) => r.statuses.contains(DiffStatus.sourceGap)).length;
-  int get outOfOrderCount =>
-      _allFilteredByMode.where((r) => r.statuses.contains(DiffStatus.outOfOrder)).length;
-  int get mutatedCount =>
-      _allFilteredByMode.where((r) => r.statuses.contains(DiffStatus.qosVlanMutated)).length;
-  int get spikeCount =>
-      _allFilteredByMode.where((r) => r.statuses.contains(DiffStatus.latencySpike)).length;
+  int get totalModePacketCount => _cachedAllFilteredByMode.length;
+  int get droppedCount => _cachedDroppedCount;
+  int get sourceGapCount => _cachedSourceGapCount;
+  int get outOfOrderCount => _cachedOutOfOrderCount;
+  int get mutatedCount => _cachedMutatedCount;
+  int get spikeCount => _cachedSpikeCount;
 
   int deliveredCountForHop(int captureIndex) {
-    return _allFilteredByMode.where((r) => r.hopMatches.containsKey(captureIndex)).length;
+    return _cachedDeliveredCountsByHop[captureIndex] ?? 0;
   }
 
   double deliveryPercentForHop(int captureIndex) {
@@ -110,6 +107,13 @@ class CaptureCompareViewModel extends ChangeNotifier {
     _isCompareMode = false;
     _selectedRecord = null;
     _visibleRecords = const [];
+    _cachedAllFilteredByMode = const [];
+    _cachedDroppedCount = 0;
+    _cachedSourceGapCount = 0;
+    _cachedOutOfOrderCount = 0;
+    _cachedMutatedCount = 0;
+    _cachedSpikeCount = 0;
+    _cachedDeliveredCountsByHop = const {};
     notifyListeners();
   }
 
@@ -192,14 +196,51 @@ class CaptureCompareViewModel extends ChangeNotifier {
   }
 
   void _refreshVisibleRecords() {
-    _visibleRecords = _engine.queryDiffRecords(
+    _cachedAllFilteredByMode = _engine.queryDiffRecords(
       filterMode: _filterMode,
       selectedFlowHash: _selectedFlowHash,
-      statusFilter: _statusFilter,
+      statusFilter: DiffStatusFilter.all,
     );
+
+    var dropped = 0;
+    var sourceGap = 0;
+    var outOfOrder = 0;
+    var mutated = 0;
+    var spike = 0;
+    final deliveredByHop = <int, int>{};
+
+    for (final r in _cachedAllFilteredByMode) {
+      if (r.statuses.contains(DiffStatus.dropped)) dropped++;
+      if (r.statuses.contains(DiffStatus.sourceGap)) sourceGap++;
+      if (r.statuses.contains(DiffStatus.outOfOrder)) outOfOrder++;
+      if (r.statuses.contains(DiffStatus.qosVlanMutated)) mutated++;
+      if (r.statuses.contains(DiffStatus.latencySpike)) spike++;
+      for (final hopIdx in r.hopMatches.keys) {
+        deliveredByHop[hopIdx] = (deliveredByHop[hopIdx] ?? 0) + 1;
+      }
+    }
+
+    _cachedDroppedCount = dropped;
+    _cachedSourceGapCount = sourceGap;
+    _cachedOutOfOrderCount = outOfOrder;
+    _cachedMutatedCount = mutated;
+    _cachedSpikeCount = spike;
+    _cachedDeliveredCountsByHop = deliveredByHop;
+
+    _visibleRecords = _statusFilter == DiffStatusFilter.all
+        ? _cachedAllFilteredByMode
+        : _engine.queryDiffRecords(
+            filterMode: _filterMode,
+            selectedFlowHash: _selectedFlowHash,
+            statusFilter: _statusFilter,
+          );
+
     if (_selectedRecord != null) {
-      final stillPresent = _visibleRecords.any((r) => r.rowIndex == _selectedRecord!.rowIndex);
-      if (!stillPresent) _selectedRecord = null;
+      final match = _visibleRecords.cast<PacketDiffRecord?>().firstWhere(
+            (r) => r!.rowIndex == _selectedRecord!.rowIndex,
+            orElse: () => null,
+          );
+      _selectedRecord = match;
     }
   }
 

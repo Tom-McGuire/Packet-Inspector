@@ -121,12 +121,6 @@ class InspectorViewModel extends ChangeNotifier {
   Set<String> get selectedReceiverKeys => _selectedReceiverKeys;
   bool get isReceiverNot => _isReceiverNot;
 
-  Set<String> get selectedSourceKeys => _selectedSenderKeys;
-  bool get isSourceNot => _isSenderNot;
-
-  Set<String> get selectedDestinationKeys => _selectedReceiverKeys;
-  bool get isDestinationNot => _isReceiverNot;
-
   bool get hasActiveFilters =>
       _selectedTriageStatuses.isNotEmpty ||
       _isTriageNot ||
@@ -155,8 +149,6 @@ class InspectorViewModel extends ChangeNotifier {
   Map<String, int> get protocolCounts => _protocolCounts;
   Map<String, int> get senderCounts => _senderCounts;
   Map<String, int> get receiverCounts => _receiverCounts;
-  Map<String, int> get sourceCounts => _senderCounts;
-  Map<String, int> get destinationCounts => _receiverCounts;
   Map<TriageStatus, int> get triageCounts => _triageCounts;
   int get totalPacketCount => _totalPacketCount;
   int get rawCapturePacketCount => _rawCapturePacketCount;
@@ -167,8 +159,6 @@ class InspectorViewModel extends ChangeNotifier {
   List<CustomProtocolRule> get customRules => _repository.customRules;
   List<EndpointRule> get senders => _repository.senders;
   List<EndpointRule> get receivers => _repository.receivers;
-  List<EndpointRule> get sources => _repository.sources;
-  List<EndpointRule> get destinations => _repository.destinations;
   BaselineProfile get baselineProfile => _repository.baselineProfile;
   String get sortColumn => _sortColumn;
   bool get sortAscending => _sortAscending;
@@ -194,16 +184,6 @@ class InspectorViewModel extends ChangeNotifier {
       return '${bps.toStringAsFixed(0)} bps';
     }
   }
-
-  void addSource(EndpointRule rule) => addSender(rule);
-  void updateSource(EndpointRule rule) => updateSender(rule);
-  void deleteSource(String id) => deleteSender(id);
-  void toggleSourceVisibility(String id) => toggleSenderVisibility(id);
-
-  void addDestination(EndpointRule rule) => addReceiver(rule);
-  void updateDestination(EndpointRule rule) => updateReceiver(rule);
-  void deleteDestination(String id) => deleteReceiver(id);
-  void toggleDestinationVisibility(String id) => toggleReceiverVisibility(id);
 
   String exportLibraryBundle() => _repository.exportLibraryBundle();
 
@@ -231,7 +211,6 @@ class InspectorViewModel extends ChangeNotifier {
     final nextBatch = _repository.queryPackets(
       offset: _packets.length,
       limit: _pageSize,
-      isTriageMode: _isTriageMode,
       triageStatuses: _selectedTriageStatuses,
       isTriageNot: _isTriageNot,
       silenceLanChatter: _silenceLanChatter,
@@ -326,24 +305,12 @@ class InspectorViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void toggleTriageMode() {
-    _isTriageMode = !_isTriageMode;
-    _refreshPackets();
-    notifyListeners();
-  }
-
   void setTriageMode(bool enabled) {
     if (_isTriageMode != enabled) {
       _isTriageMode = enabled;
       _refreshPackets();
       notifyListeners();
     }
-  }
-
-  void toggleSilenceLanChatter() {
-    _silenceLanChatter = !_silenceLanChatter;
-    _refreshPackets();
-    notifyListeners();
   }
 
   void setSilenceLanChatter(bool silence) {
@@ -428,21 +395,12 @@ class InspectorViewModel extends ChangeNotifier {
     }
   }
 
-  void setSourceNot(bool val) => setSenderNot(val);
-  void setDestinationNot(bool val) => setReceiverNot(val);
-
   void toggleProtocolPill(String proto) {
     if (_selectedProtocolPills.contains(proto)) {
       _selectedProtocolPills.remove(proto);
     } else {
       _selectedProtocolPills.add(proto);
     }
-    _refreshPackets();
-    notifyListeners();
-  }
-
-  void clearProtocolPills() {
-    _selectedProtocolPills.clear();
     _refreshPackets();
     notifyListeners();
   }
@@ -464,24 +422,12 @@ class InspectorViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void clearSenderPills() {
-    _selectedSenderKeys.clear();
-    _refreshPackets();
-    notifyListeners();
-  }
-
   void toggleReceiverPill(String key) {
     if (_selectedReceiverKeys.contains(key)) {
       _selectedReceiverKeys.remove(key);
     } else {
       _selectedReceiverKeys.add(key);
     }
-    _refreshPackets();
-    notifyListeners();
-  }
-
-  void clearReceiverPills() {
-    _selectedReceiverKeys.clear();
     _refreshPackets();
     notifyListeners();
   }
@@ -505,8 +451,6 @@ class InspectorViewModel extends ChangeNotifier {
     _refreshPackets();
     notifyListeners();
   }
-
-  void clearAllQuickFilters() => clearAllFilters();
 
   void applyQuickFilters({
     Set<String>? protocols,
@@ -590,16 +534,6 @@ class InspectorViewModel extends ChangeNotifier {
   void deleteReceiver(String id) {
     _repository.deleteReceiver(id);
     _refreshState();
-    notifyListeners();
-  }
-
-  void toggleIpFilter(String ip) {
-    if (_selectedIps.contains(ip)) {
-      _selectedIps.remove(ip);
-    } else {
-      _selectedIps.add(ip);
-    }
-    _refreshPackets();
     notifyListeners();
   }
 
@@ -790,7 +724,29 @@ class InspectorViewModel extends ChangeNotifier {
   }
 
   String exportFilteredPacketsCsv() {
-    return CsvExportService.exportPacketsToCsv(_packets);
+    final allMatching = _repository.queryPackets(
+      offset: 0,
+      limit: _totalPacketCount > 0 ? _totalPacketCount : 1000000,
+      triageStatuses: _selectedTriageStatuses,
+      isTriageNot: _isTriageNot,
+      silenceLanChatter: _silenceLanChatter,
+      sourceSearch: _sourceSearch,
+      isSourceSearchNot: _isSourceSearchNot,
+      destSearch: _destSearch,
+      isDestSearchNot: _isDestSearchNot,
+      protocolPills: _selectedProtocolPills,
+      isProtocolNot: _isProtocolNot,
+      senderFilters: _selectedSenderKeys,
+      isSenderNot: _isSenderNot,
+      receiverFilters: _selectedReceiverKeys,
+      isReceiverNot: _isReceiverNot,
+      ipFilters: _selectedIps,
+      timeStartUs: _timeWindowStartUs,
+      timeEndUs: _timeWindowEndUs,
+      sortColumn: _sortColumn,
+      sortAscending: _sortAscending,
+    );
+    return CsvExportService.exportPacketsToCsv(allMatching);
   }
 
   String exportFlowsCsv() {
@@ -854,7 +810,6 @@ class InspectorViewModel extends ChangeNotifier {
 
     // 2. Protocol counts (all protocols under active non-protocol filters)
     final dbProtoCounts = _repository.getProtocolCounts(
-      isTriageMode: _isTriageMode,
       triageStatuses: _selectedTriageStatuses,
       isTriageNot: _isTriageNot,
       silenceLanChatter: _silenceLanChatter,
@@ -881,7 +836,6 @@ class InspectorViewModel extends ChangeNotifier {
 
     // 3. Sender counts (Sources)
     final topSenders = _repository.getTopSenders(
-      isTriageMode: _isTriageMode,
       triageStatuses: _selectedTriageStatuses,
       isTriageNot: _isTriageNot,
       silenceLanChatter: _silenceLanChatter,
@@ -896,12 +850,16 @@ class InspectorViewModel extends ChangeNotifier {
       timeEndUs: _timeWindowEndUs,
     );
     final sCounts = Map<String, int>.from(topSenders);
-    for (final s in senders) {
-      final cnt = _repository.countPacketsForEndpoint(
-        ip: s.ipAddress,
-        port: s.port,
+    final senderKeysToCount = <String>{
+      for (final s in senders)
+        if (!sCounts.containsKey(s.filterKey)) s.filterKey,
+      for (final selectedKey in _selectedSenderKeys)
+        if (!sCounts.containsKey(selectedKey)) selectedKey,
+    };
+    if (senderKeysToCount.isNotEmpty) {
+      sCounts.addAll(_repository.countPacketsForEndpoints(
+        endpointKeys: senderKeysToCount,
         isSender: true,
-        isTriageMode: _isTriageMode,
         triageStatuses: _selectedTriageStatuses,
         isTriageNot: _isTriageNot,
         silenceLanChatter: _silenceLanChatter,
@@ -914,44 +872,12 @@ class InspectorViewModel extends ChangeNotifier {
         ipFilters: _selectedIps,
         timeStartUs: _timeWindowStartUs,
         timeEndUs: _timeWindowEndUs,
-      );
-      sCounts[s.filterKey] = cnt;
-    }
-    for (final selectedKey in _selectedSenderKeys) {
-      if (!sCounts.containsKey(selectedKey)) {
-        String ip = selectedKey;
-        int? port;
-        if (selectedKey.contains(':')) {
-          final parts = selectedKey.split(':');
-          ip = parts[0];
-          port = int.tryParse(parts[1]);
-        }
-        final cnt = _repository.countPacketsForEndpoint(
-          ip: ip,
-          port: port,
-          isSender: true,
-          isTriageMode: _isTriageMode,
-          triageStatuses: _selectedTriageStatuses,
-          isTriageNot: _isTriageNot,
-          silenceLanChatter: _silenceLanChatter,
-          destSearch: _destSearch,
-          isDestSearchNot: _isDestSearchNot,
-          protocolPills: _selectedProtocolPills,
-          isProtocolNot: _isProtocolNot,
-          receiverFilters: _selectedReceiverKeys,
-          isReceiverNot: _isReceiverNot,
-          ipFilters: _selectedIps,
-          timeStartUs: _timeWindowStartUs,
-          timeEndUs: _timeWindowEndUs,
-        );
-        sCounts[selectedKey] = cnt;
-      }
+      ));
     }
     _senderCounts = sCounts;
 
     // 4. Receiver counts (Destinations)
     final topReceivers = _repository.getTopReceivers(
-      isTriageMode: _isTriageMode,
       triageStatuses: _selectedTriageStatuses,
       isTriageNot: _isTriageNot,
       silenceLanChatter: _silenceLanChatter,
@@ -966,12 +892,16 @@ class InspectorViewModel extends ChangeNotifier {
       timeEndUs: _timeWindowEndUs,
     );
     final rCounts = Map<String, int>.from(topReceivers);
-    for (final r in receivers) {
-      final cnt = _repository.countPacketsForEndpoint(
-        ip: r.ipAddress,
-        port: r.port,
+    final receiverKeysToCount = <String>{
+      for (final r in receivers)
+        if (!rCounts.containsKey(r.filterKey)) r.filterKey,
+      for (final selectedKey in _selectedReceiverKeys)
+        if (!rCounts.containsKey(selectedKey)) selectedKey,
+    };
+    if (receiverKeysToCount.isNotEmpty) {
+      rCounts.addAll(_repository.countPacketsForEndpoints(
+        endpointKeys: receiverKeysToCount,
         isSender: false,
-        isTriageMode: _isTriageMode,
         triageStatuses: _selectedTriageStatuses,
         isTriageNot: _isTriageNot,
         silenceLanChatter: _silenceLanChatter,
@@ -984,45 +914,13 @@ class InspectorViewModel extends ChangeNotifier {
         ipFilters: _selectedIps,
         timeStartUs: _timeWindowStartUs,
         timeEndUs: _timeWindowEndUs,
-      );
-      rCounts[r.filterKey] = cnt;
-    }
-    for (final selectedKey in _selectedReceiverKeys) {
-      if (!rCounts.containsKey(selectedKey)) {
-        String ip = selectedKey;
-        int? port;
-        if (selectedKey.contains(':')) {
-          final parts = selectedKey.split(':');
-          ip = parts[0];
-          port = int.tryParse(parts[1]);
-        }
-        final cnt = _repository.countPacketsForEndpoint(
-          ip: ip,
-          port: port,
-          isSender: false,
-          isTriageMode: _isTriageMode,
-          triageStatuses: _selectedTriageStatuses,
-          isTriageNot: _isTriageNot,
-          silenceLanChatter: _silenceLanChatter,
-          sourceSearch: _sourceSearch,
-          isSourceSearchNot: _isSourceSearchNot,
-          protocolPills: _selectedProtocolPills,
-          isProtocolNot: _isProtocolNot,
-          senderFilters: _selectedSenderKeys,
-          isSenderNot: _isSenderNot,
-          ipFilters: _selectedIps,
-          timeStartUs: _timeWindowStartUs,
-          timeEndUs: _timeWindowEndUs,
-        );
-        rCounts[selectedKey] = cnt;
-      }
+      ));
     }
     _receiverCounts = rCounts;
   }
 
   void _refreshPackets() {
     _totalPacketCount = _repository.getPacketCount(
-      isTriageMode: _isTriageMode,
       triageStatuses: _selectedTriageStatuses,
       isTriageNot: _isTriageNot,
       silenceLanChatter: _silenceLanChatter,
@@ -1044,7 +942,6 @@ class InspectorViewModel extends ChangeNotifier {
     _packets = _repository.queryPackets(
       offset: 0,
       limit: _pageSize,
-      isTriageMode: _isTriageMode,
       triageStatuses: _selectedTriageStatuses,
       isTriageNot: _isTriageNot,
       silenceLanChatter: _silenceLanChatter,
@@ -1067,10 +964,18 @@ class InspectorViewModel extends ChangeNotifier {
 
     _hasMorePackets = _packets.length < _totalPacketCount;
 
-    if (_selectedPacket != null && !_packets.any((p) => p.packetNo == _selectedPacket!.packetNo)) {
-      _selectedPacket = null;
-      _selectedPacketRawBytes = null;
-      _selectedPacketPayloadBytes = null;
+    if (_selectedPacket != null) {
+      final selectedNo = _selectedPacket!.packetNo;
+      final matchIdx = _packets.indexWhere((p) => p.packetNo == selectedNo);
+      if (matchIdx != -1) {
+        _selectedPacket = _packets[matchIdx];
+        _selectedPacketRawBytes = _repository.readRawPacketBytes(_selectedPacket!, payloadOnly: false);
+        _selectedPacketPayloadBytes = _repository.readRawPacketBytes(_selectedPacket!, payloadOnly: true);
+      } else {
+        _selectedPacket = null;
+        _selectedPacketRawBytes = null;
+        _selectedPacketPayloadBytes = null;
+      }
     }
 
     _updateFilterCounts();

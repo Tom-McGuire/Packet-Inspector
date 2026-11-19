@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import '../../../domain/models/custom_protocol_rule.dart';
+import '../../../domain/models/packet_record.dart';
 import '../diff/capture_fingerprint_service.dart';
 import 'pcap_binary_reader.dart';
 
@@ -18,14 +19,18 @@ class DissectedPacketInfo {
     required this.payloadPreview,
     required this.isLanNoise,
     required this.flowHash,
+    String? baseProtocol,
+    String? baseSummary,
     this.customProtocolId,
+    this.customDefaultTriageStatus,
     this.customFields = const {},
     this.fingerprintHash = 0,
     this.dscpValue,
     this.vlanId,
     this.tcpSeqNum,
     this.extractedSeq,
-  });
+  })  : baseProtocol = baseProtocol ?? detectedProtocol,
+        baseSummary = baseSummary ?? summary;
 
   final int ethType;
   final String srcIp;
@@ -35,12 +40,15 @@ class DissectedPacketInfo {
   final int? dstPort;
   String detectedProtocol;
   String summary;
+  final String baseProtocol;
+  final String baseSummary;
   final int payloadOffsetInPacket;
   final int payloadLength;
   final List<int> payloadPreview;
   bool isLanNoise;
   final int flowHash;
   String? customProtocolId;
+  TriageStatus? customDefaultTriageStatus;
   Map<String, dynamic> customFields;
   final int fingerprintHash;
   final int? dscpValue;
@@ -50,6 +58,8 @@ class DissectedPacketInfo {
 }
 
 class PacketDissector {
+  static const int maxPayloadPreviewBytes = 256;
+
   static DissectedPacketInfo dissect({
     required RawCapturedPacket rawPacket,
     List<CustomProtocolRule> customRules = const [],
@@ -400,7 +410,10 @@ class PacketDissector {
     final flowHash = computeFlowHash(srcIp, dstIp, srcPort ?? 0, dstPort ?? 0, ipProto);
 
     // Evaluate Custom Protocol Rules (sorted by specificity so Tier 2 magic bytes rules take precedence over generic Tier 1 catch-alls)
+    final baseProtocol = protoName;
+    final baseSummary = summary;
     String? matchedRuleId;
+    TriageStatus? customDefaultTriageStatus;
     Map<String, dynamic> customFields = const {};
     final sortedRules = List<CustomProtocolRule>.from(customRules)
       ..sort((a, b) => b.specificityScore.compareTo(a.specificityScore));
@@ -416,10 +429,15 @@ class PacketDissector {
       )) {
         protoName = rule.name;
         matchedRuleId = rule.id;
+        customDefaultTriageStatus = rule.defaultTriageStatus;
         customFields = rule.extractFieldValues(payloadSlice);
         if (customFields.isNotEmpty) {
           final fieldsStr = customFields.entries.map((e) => '${e.key}=${e.value}').join(', ');
           summary = '${rule.name} [$fieldsStr]';
+        } else {
+          summary = (srcPort != null && dstPort != null)
+              ? '$srcPort → $dstPort [${rule.name}] Len=$payloadLength'
+              : '${rule.name} Len=$payloadLength';
         }
         break;
       }
@@ -455,12 +473,15 @@ class PacketDissector {
       dstPort: dstPort,
       detectedProtocol: protoName,
       summary: summary,
+      baseProtocol: baseProtocol,
+      baseSummary: baseSummary,
       payloadOffsetInPacket: payloadOffset,
       payloadLength: payloadLength,
       payloadPreview: preview,
       isLanNoise: isLanNoise,
       flowHash: flowHash,
       customProtocolId: matchedRuleId,
+      customDefaultTriageStatus: customDefaultTriageStatus,
       customFields: customFields,
       fingerprintHash: fpHash,
       dscpValue: dscpValue,
@@ -628,9 +649,9 @@ class PacketDissector {
   }
 
   static List<int> _extractPreview(Uint8List bytes, int offset, int length) {
-    if (offset >= bytes.length || length <= 0) return const [];
+    if (offset < 0 || offset >= bytes.length || length <= 0) return const [];
     final actualLen = (offset + length <= bytes.length) ? length : (bytes.length - offset);
-    final count = actualLen > 2048 ? 2048 : actualLen;
+    final count = actualLen > maxPayloadPreviewBytes ? maxPayloadPreviewBytes : actualLen;
     return bytes.sublist(offset, offset + count).toList();
   }
 

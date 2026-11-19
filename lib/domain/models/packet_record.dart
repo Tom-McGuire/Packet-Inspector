@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 enum TriageStatus {
@@ -54,6 +55,8 @@ class PacketRecord {
     required this.isLanNoise,
     this.customProtocolId,
     this.customFields = const {},
+    this.baseProtocol,
+    this.baseSummary,
   });
 
   final int packetNo;
@@ -73,12 +76,14 @@ class PacketRecord {
   final int fileByteOffset;
   final int payloadFileOffset;
   final int payloadLength;
-  final List<int> payloadPreview; // First up to 64 bytes for instant magic-byte matching
+  final List<int> payloadPreview; // First up to 256 bytes for instant magic-byte matching
   final String summary;
   final TriageStatus triageStatus;
   final bool isLanNoise;
   final String? customProtocolId;
   final Map<String, dynamic> customFields;
+  final String? baseProtocol;
+  final String? baseSummary;
 
   double get timestampSeconds => timestampUs / 1000000.0;
   double get globalDeltaSeconds => globalDeltaUs / 1000000.0;
@@ -129,6 +134,9 @@ class PacketRecord {
       'triage_status': triageStatus.name,
       'is_lan_noise': isLanNoise ? 1 : 0,
       'custom_protocol_id': customProtocolId,
+      'base_protocol': baseProtocol,
+      'base_summary': baseSummary,
+      'custom_fields_json': customFields.isEmpty ? null : jsonEncode(customFields),
     };
   }
 
@@ -141,6 +149,23 @@ class PacketRecord {
       preview = previewRaw.toList();
     } else {
       preview = const [];
+    }
+
+    final customFieldsRaw = map['custom_fields_json'] as String?;
+    Map<String, dynamic> parsedCustomFields = const {};
+    if (customFieldsRaw != null && customFieldsRaw.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(customFieldsRaw);
+        if (decoded is Map<String, dynamic>) {
+          parsedCustomFields = Map<String, dynamic>.unmodifiable(decoded);
+        } else if (decoded is Map) {
+          parsedCustomFields = Map<String, dynamic>.unmodifiable(
+            decoded.map((k, v) => MapEntry(k.toString(), v)),
+          );
+        }
+      } catch (_) {
+        parsedCustomFields = const {};
+      }
     }
 
     return PacketRecord(
@@ -166,6 +191,9 @@ class PacketRecord {
       triageStatus: TriageStatus.fromString(map['triage_status'] as String?),
       isLanNoise: (map['is_lan_noise'] as int? ?? 0) == 1,
       customProtocolId: map['custom_protocol_id'] as String?,
+      customFields: parsedCustomFields,
+      baseProtocol: map['base_protocol'] as String?,
+      baseSummary: map['base_summary'] as String?,
     );
   }
 
@@ -193,6 +221,8 @@ class PacketRecord {
     bool? isLanNoise,
     String? customProtocolId,
     Map<String, dynamic>? customFields,
+    String? baseProtocol,
+    String? baseSummary,
   }) {
     return PacketRecord(
       packetNo: packetNo ?? this.packetNo,
@@ -218,6 +248,8 @@ class PacketRecord {
       isLanNoise: isLanNoise ?? this.isLanNoise,
       customProtocolId: customProtocolId ?? this.customProtocolId,
       customFields: customFields ?? this.customFields,
+      baseProtocol: baseProtocol ?? this.baseProtocol,
+      baseSummary: baseSummary ?? this.baseSummary,
     );
   }
 }

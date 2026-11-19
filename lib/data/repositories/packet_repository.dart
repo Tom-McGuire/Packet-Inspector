@@ -11,17 +11,6 @@ import '../services/parser/packet_dissector.dart';
 import '../services/parser/demo_pcap_generator.dart';
 import '../services/storage/protocol_library_service.dart';
 
-class IngestProgress {
-  const IngestProgress({
-    required this.packetsProcessed,
-    required this.totalBytes,
-    required this.isDone,
-  });
-  final int packetsProcessed;
-  final int totalBytes;
-  final bool isDone;
-}
-
 class PacketRepository {
   PacketRepository({
     PacketDatabaseService? dbService,
@@ -55,7 +44,6 @@ class PacketRepository {
   List<EndpointRule> get sources => senders;
   List<EndpointRule> get destinations => receivers;
   BaselineProfile get baselineProfile => _baselineProfile;
-  PacketDatabaseService get dbService => _dbService;
   ProtocolLibraryService get storageService => _storageService;
   String? get loadedFilePath => _loadedFilePath;
 
@@ -124,7 +112,10 @@ class PacketRepository {
       }
       _customRules = updatedList;
       _storageService.saveCustomProtocols(_customRules);
-      _dbService.relabelAllCustomProtocols(_customRules);
+      _dbService.relabelAllCustomProtocols(
+        _customRules,
+        baselineProfile: _baselineProfile,
+      );
     }
 
     int importedSources = 0;
@@ -188,7 +179,6 @@ class PacketRepository {
 
   Map<String, int> getTopSenders({
     int limit = 15,
-    bool isTriageMode = true,
     Set<TriageStatus> triageStatuses = const {
       TriageStatus.expected,
       TriageStatus.unclassified,
@@ -208,7 +198,6 @@ class PacketRepository {
   }) =>
       _dbService.queryTopSenders(
         limit: limit,
-        isTriageMode: isTriageMode,
         triageStatuses: triageStatuses,
         isTriageNot: isTriageNot,
         silenceLanChatter: silenceLanChatter,
@@ -225,7 +214,6 @@ class PacketRepository {
 
   Map<String, int> getTopReceivers({
     int limit = 15,
-    bool isTriageMode = true,
     Set<TriageStatus> triageStatuses = const {
       TriageStatus.expected,
       TriageStatus.unclassified,
@@ -245,7 +233,6 @@ class PacketRepository {
   }) =>
       _dbService.queryTopReceivers(
         limit: limit,
-        isTriageMode: isTriageMode,
         triageStatuses: triageStatuses,
         isTriageNot: isTriageNot,
         silenceLanChatter: silenceLanChatter,
@@ -264,7 +251,6 @@ class PacketRepository {
     required String ip,
     int? port,
     required bool isSender,
-    bool isTriageMode = true,
     Set<TriageStatus> triageStatuses = const {
       TriageStatus.expected,
       TriageStatus.unclassified,
@@ -290,7 +276,51 @@ class PacketRepository {
         ip: ip,
         port: port,
         isSender: isSender,
-        isTriageMode: isTriageMode,
+        triageStatuses: triageStatuses,
+        isTriageNot: isTriageNot,
+        silenceLanChatter: silenceLanChatter,
+        sourceSearch: sourceSearch,
+        isSourceSearchNot: isSourceSearchNot,
+        destSearch: destSearch,
+        isDestSearchNot: isDestSearchNot,
+        protocolPills: protocolPills,
+        isProtocolNot: isProtocolNot,
+        senderFilters: senderFilters,
+        isSenderNot: isSenderNot,
+        receiverFilters: receiverFilters,
+        isReceiverNot: isReceiverNot,
+        ipFilters: ipFilters,
+        timeStartUs: timeStartUs,
+        timeEndUs: timeEndUs,
+      );
+
+  Map<String, int> countPacketsForEndpoints({
+    required Iterable<String> endpointKeys,
+    required bool isSender,
+    Set<TriageStatus> triageStatuses = const {
+      TriageStatus.expected,
+      TriageStatus.unclassified,
+      TriageStatus.unexpected,
+    },
+    bool isTriageNot = false,
+    bool silenceLanChatter = false,
+    String sourceSearch = '',
+    bool isSourceSearchNot = false,
+    String destSearch = '',
+    bool isDestSearchNot = false,
+    Set<String> protocolPills = const {},
+    bool isProtocolNot = false,
+    Set<String> senderFilters = const {},
+    bool isSenderNot = false,
+    Set<String> receiverFilters = const {},
+    bool isReceiverNot = false,
+    Set<String> ipFilters = const {},
+    int? timeStartUs,
+    int? timeEndUs,
+  }) =>
+      _dbService.countPacketsForEndpoints(
+        endpointKeys: endpointKeys,
+        isSender: isSender,
         triageStatuses: triageStatuses,
         isTriageNot: isTriageNot,
         silenceLanChatter: silenceLanChatter,
@@ -378,6 +408,7 @@ class PacketRepository {
         dstIp: info.dstIp,
         detectedProtocol: info.detectedProtocol,
         isLanNoise: info.isLanNoise,
+        defaultRuleStatus: info.customDefaultTriageStatus ?? TriageStatus.unclassified,
       );
 
       records.add(PacketRecord(
@@ -404,6 +435,8 @@ class PacketRepository {
         isLanNoise: info.isLanNoise,
         customProtocolId: info.customProtocolId,
         customFields: info.customFields,
+        baseProtocol: info.baseProtocol,
+        baseSummary: info.baseSummary,
       ));
     }
 
@@ -413,27 +446,37 @@ class PacketRepository {
 
   /// Reads the raw frame bytes or L4 payload bytes for a specific packet on demand.
   Uint8List readRawPacketBytes(PacketRecord packet, {bool payloadOnly = false}) {
-    final Uint8List sourceBytes;
-    if (_inMemoryBuffer != null) {
-      sourceBytes = _inMemoryBuffer!;
-    } else if (_loadedFilePath != null && File(_loadedFilePath!).existsSync()) {
-      sourceBytes = File(_loadedFilePath!).readAsBytesSync();
-    } else {
+    final int offset = payloadOnly ? packet.payloadFileOffset : packet.fileByteOffset;
+    final int length = payloadOnly ? packet.payloadLength : packet.capturedLength;
+    if (offset < 0 || length <= 0) {
       return Uint8List(0);
     }
 
-    if (payloadOnly) {
-      final offset = packet.payloadFileOffset;
-      final length = packet.payloadLength;
-      if (offset >= sourceBytes.length || length <= 0) return Uint8List(0);
-      final readLen = (offset + length <= sourceBytes.length) ? length : (sourceBytes.length - offset);
-      return sourceBytes.sublist(offset, offset + readLen);
-    } else {
-      final offset = packet.fileByteOffset;
-      final length = packet.capturedLength;
-      if (offset >= sourceBytes.length) return Uint8List(0);
-      final readLen = (offset + length <= sourceBytes.length) ? length : (sourceBytes.length - offset);
-      return sourceBytes.sublist(offset, offset + readLen);
+    if (_inMemoryBuffer != null) {
+      final buf = _inMemoryBuffer!;
+      if (offset >= buf.length) return Uint8List(0);
+      final readLen = (offset + length <= buf.length) ? length : (buf.length - offset);
+      return buf.sublist(offset, offset + readLen);
+    }
+
+    final filePath = _loadedFilePath;
+    if (filePath == null) {
+      return Uint8List(0);
+    }
+    final file = File(filePath);
+    if (!file.existsSync()) {
+      return Uint8List(0);
+    }
+
+    final raf = file.openSync(mode: FileMode.read);
+    try {
+      final fileLen = raf.lengthSync();
+      if (offset >= fileLen) return Uint8List(0);
+      final readLen = (offset + length <= fileLen) ? length : (fileLen - offset);
+      raf.setPositionSync(offset);
+      return raf.readSync(readLen);
+    } finally {
+      raf.closeSync();
     }
   }
 
@@ -444,21 +487,30 @@ class PacketRepository {
       rule,
     ];
     _storageService.saveCustomProtocols(_customRules);
-    return _dbService.relabelAllCustomProtocols(_customRules);
+    return _dbService.relabelAllCustomProtocols(
+      _customRules,
+      baselineProfile: _baselineProfile,
+    );
   }
 
   /// Deletes a custom protocol rule and retroactively re-evaluates remaining rules.
   int deleteCustomProtocol(String ruleId) {
     _customRules = _customRules.where((r) => r.id != ruleId).toList();
     _storageService.saveCustomProtocols(_customRules);
-    return _dbService.relabelAllCustomProtocols(_customRules);
+    return _dbService.relabelAllCustomProtocols(
+      _customRules,
+      baselineProfile: _baselineProfile,
+    );
   }
 
   /// Bulk updates all custom protocol rules.
   int updateCustomProtocols(List<CustomProtocolRule> rules) {
     _customRules = List.from(rules);
     _storageService.saveCustomProtocols(_customRules);
-    return _dbService.relabelAllCustomProtocols(_customRules);
+    return _dbService.relabelAllCustomProtocols(
+      _customRules,
+      baselineProfile: _baselineProfile,
+    );
   }
 
   void updateBaselineProfile(BaselineProfile profile) {
@@ -474,7 +526,6 @@ class PacketRepository {
   List<PacketRecord> queryPackets({
     int offset = 0,
     int limit = 100,
-    bool isTriageMode = true,
     Set<TriageStatus> triageStatuses = const {
       TriageStatus.expected,
       TriageStatus.unclassified,
@@ -501,7 +552,6 @@ class PacketRepository {
     return _dbService.queryPackets(
       offset: offset,
       limit: limit,
-      isTriageMode: isTriageMode,
       triageStatuses: triageStatuses,
       isTriageNot: isTriageNot,
       silenceLanChatter: silenceLanChatter,
@@ -524,7 +574,6 @@ class PacketRepository {
   }
 
   int getPacketCount({
-    bool isTriageMode = true,
     Set<TriageStatus> triageStatuses = const {
       TriageStatus.expected,
       TriageStatus.unclassified,
@@ -547,7 +596,6 @@ class PacketRepository {
     int? timeEndUs,
   }) {
     return _dbService.getPacketCount(
-      isTriageMode: isTriageMode,
       triageStatuses: triageStatuses,
       isTriageNot: isTriageNot,
       silenceLanChatter: silenceLanChatter,
@@ -574,7 +622,6 @@ class PacketRepository {
   double getCaptureBandwidthBps() => _dbService.queryCaptureBandwidthBps();
 
   Map<String, int> getProtocolCounts({
-    bool isTriageMode = true,
     Set<TriageStatus> triageStatuses = const {
       TriageStatus.expected,
       TriageStatus.unclassified,
@@ -595,7 +642,6 @@ class PacketRepository {
     int? timeEndUs,
   }) =>
       _dbService.queryProtocolCounts(
-        isTriageMode: isTriageMode,
         triageStatuses: triageStatuses,
         isTriageNot: isTriageNot,
         silenceLanChatter: silenceLanChatter,

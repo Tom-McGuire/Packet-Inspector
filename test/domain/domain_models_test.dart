@@ -42,6 +42,7 @@ void main() {
       expect(packet.dateTime.millisecondsSinceEpoch, equals(1500));
 
       final map = packet.toMap();
+      expect(map['custom_fields_json'], isNull);
       final reconstructed = PacketRecord.fromMap(map);
 
       expect(reconstructed.packetNo, equals(1));
@@ -50,6 +51,57 @@ void main() {
       expect(reconstructed.triageStatus, equals(TriageStatus.expected));
       expect(reconstructed.payloadPreview, equals([0x12, 0x34, 0x56, 0x78]));
       expect(reconstructed.isLanNoise, isFalse);
+      expect(reconstructed.customFields, isEmpty);
+      expect(reconstructed.baseProtocol, isNull);
+      expect(reconstructed.baseSummary, isNull);
+    });
+
+    test('toMap and fromMap preserve customFields, baseProtocol, and baseSummary', () {
+      final packet = PacketRecord(
+        packetNo: 2,
+        timestampUs: 2000000,
+        globalDeltaUs: 500,
+        streamDeltaUs: 500,
+        flowHash: 42,
+        ethType: 0x0800,
+        srcIp: '10.0.0.1',
+        dstIp: '10.0.0.2',
+        ipProto: 17,
+        srcPort: 45820,
+        dstPort: 45820,
+        detectedProtocol: 'ACME Telemetry',
+        capturedLength: 58,
+        originalLength: 58,
+        fileByteOffset: 100,
+        payloadFileOffset: 142,
+        payloadLength: 16,
+        payloadPreview: const [0x41, 0x43, 0x4D, 0x45],
+        summary: 'ACME Telemetry [CommandID=101, Tag=PROD]',
+        triageStatus: TriageStatus.expected,
+        isLanNoise: false,
+        customProtocolId: 'acme_proto',
+        customFields: const {'CommandID': 101, 'Tag': 'PROD'},
+        baseProtocol: 'UDP',
+        baseSummary: '45820 → 45820 Len=16',
+      );
+
+      final map = packet.toMap();
+      expect(map['custom_fields_json'], isA<String>());
+      expect(map['base_protocol'], equals('UDP'));
+      expect(map['base_summary'], equals('45820 → 45820 Len=16'));
+
+      final restored = PacketRecord.fromMap(map);
+      expect(restored.baseProtocol, equals('UDP'));
+      expect(restored.baseSummary, equals('45820 → 45820 Len=16'));
+      expect(restored.customFields['CommandID'], equals(101));
+      expect(restored.customFields['Tag'], equals('PROD'));
+
+      final copied = restored.copyWith(
+        baseProtocol: 'TCP',
+        baseSummary: 'updated base',
+      );
+      expect(copied.baseProtocol, equals('TCP'));
+      expect(copied.baseSummary, equals('updated base'));
     });
 
     test('copyWith updates specified fields', () {
@@ -271,6 +323,92 @@ void main() {
       );
 
       expect(status, equals(TriageStatus.unexpected));
+    });
+
+    test('expectedSubnets classifies packet as expected when only srcIp matches', () {
+      const profile = BaselineProfile(
+        id: 'sub1',
+        name: 'Subnet',
+        expectedSubnets: ['192.168.1.'],
+        expectedProtocols: {},
+        silenceLanChatter: false,
+      );
+
+      final status = profile.evaluateTriage(
+        srcIp: '192.168.1.10',
+        dstIp: '8.8.8.8',
+        detectedProtocol: 'CUSTOM',
+        isLanNoise: false,
+      );
+      expect(status, equals(TriageStatus.expected));
+    });
+
+    test('expectedSubnets classifies packet as expected when only dstIp matches', () {
+      const profile = BaselineProfile(
+        id: 'sub1',
+        name: 'Subnet',
+        expectedSubnets: ['192.168.1.'],
+        expectedProtocols: {},
+        silenceLanChatter: false,
+      );
+
+      final status = profile.evaluateTriage(
+        srcIp: '8.8.8.8',
+        dstIp: '192.168.1.50',
+        detectedProtocol: 'CUSTOM',
+        isLanNoise: false,
+      );
+      expect(status, equals(TriageStatus.expected));
+    });
+
+    test('expectedSubnets matches traffic across two different expected subnets', () {
+      const profile = BaselineProfile(
+        id: 'sub2',
+        name: 'Multi Subnet',
+        expectedSubnets: ['192.168.1.', '10.0.0.'],
+        expectedProtocols: {},
+        silenceLanChatter: false,
+      );
+
+      final status = profile.evaluateTriage(
+        srcIp: '192.168.1.10',
+        dstIp: '10.0.0.5',
+        detectedProtocol: 'CUSTOM',
+        isLanNoise: false,
+      );
+      expect(status, equals(TriageStatus.expected));
+    });
+
+    test('expectedSubnets skips non-matching traffic and respects unexpected precedence', () {
+      const profile = BaselineProfile(
+        id: 'sub3',
+        name: 'Strict Subnet',
+        expectedSubnets: ['192.168.1.'],
+        unexpectedIps: {'8.8.8.8'},
+        expectedProtocols: {},
+        silenceLanChatter: false,
+      );
+
+      expect(
+        profile.evaluateTriage(
+          srcIp: '172.16.0.1',
+          dstIp: '172.16.0.2',
+          detectedProtocol: 'CUSTOM',
+          isLanNoise: false,
+          defaultRuleStatus: TriageStatus.unclassified,
+        ),
+        equals(TriageStatus.unclassified),
+      );
+
+      expect(
+        profile.evaluateTriage(
+          srcIp: '192.168.1.10',
+          dstIp: '8.8.8.8',
+          detectedProtocol: 'CUSTOM',
+          isLanNoise: false,
+        ),
+        equals(TriageStatus.unexpected),
+      );
     });
 
     test('BaselineProfile serialization round-trip', () {

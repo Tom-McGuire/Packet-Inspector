@@ -32,8 +32,10 @@ class _DiffPacketTableState extends State<DiffPacketTable> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       vm.consumeScrollRequest();
-      if (_scrollController.hasClients) {
-        final offset = (target * _rowHeight).clamp(
+      final listIndex =
+          vm.visibleRecords.indexWhere((r) => r.rowIndex == target);
+      if (listIndex != -1 && _scrollController.hasClients) {
+        final offset = (listIndex * _rowHeight).clamp(
           0.0,
           _scrollController.position.maxScrollExtent,
         );
@@ -168,7 +170,7 @@ class _DiffPacketTableState extends State<DiffPacketTable> {
             SizedBox(
               width: 54,
               child: Text(
-                '${record.rowIndex + 1}',
+                '${record.rowIndex}',
                 style: TextStyle(
                   fontSize: 11,
                   color: AppTheme.textMuted,
