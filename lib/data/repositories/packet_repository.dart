@@ -6,7 +6,7 @@ import '../../../domain/models/baseline_profile.dart';
 import '../../../domain/models/timeline_bucket.dart';
 import '../../../domain/models/endpoint_rule.dart';
 import '../services/database/packet_database_service.dart';
-import '../services/parser/pcap_binary_reader.dart';
+import 'package:network_suite_shared/network_suite_shared.dart';
 import '../services/parser/packet_dissector.dart';
 import '../services/parser/demo_pcap_generator.dart';
 import '../services/storage/protocol_library_service.dart';

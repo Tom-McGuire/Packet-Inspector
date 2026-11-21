@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-import '../parser/pcap_binary_reader.dart';
+import 'package:network_suite_shared/network_suite_shared.dart';
 import 'multi_capture_diff_engine.dart';
 
 /// Generates synthetic multi-hop PCAP captures (Console -> FOH Switch -> Dimmer Rack)

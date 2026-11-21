@@ -2,7 +2,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:packet_inspector/domain/models/packet_record.dart';
 import 'package:packet_inspector/domain/models/custom_protocol_rule.dart';
-import 'package:packet_inspector/data/services/parser/pcap_binary_reader.dart';
+import 'package:network_suite_shared/network_suite_shared.dart';
 import 'package:packet_inspector/data/services/parser/packet_dissector.dart';
 import 'package:packet_inspector/data/services/parser/demo_pcap_generator.dart';
 

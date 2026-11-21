@@ -6,7 +6,7 @@ import 'package:packet_inspector/data/repositories/packet_repository.dart';
 import 'package:packet_inspector/data/services/ai/packet_ai_tools.dart';
 import 'package:packet_inspector/data/services/diff/demo_diff_generator.dart';
 import 'package:packet_inspector/data/services/diff/multi_capture_diff_engine.dart';
-import 'package:packet_inspector/data/services/parser/pcap_binary_reader.dart';
+import 'package:network_suite_shared/network_suite_shared.dart';
 import 'package:packet_inspector/domain/models/packet_diff_record.dart';
 import 'package:packet_inspector/ui/features/compare/view_models/capture_compare_view_model.dart';
 import 'package:packet_inspector/ui/features/compare/views/compare_setup_dialog.dart';

@@ -9,7 +9,8 @@ import 'package:packet_inspector/data/repositories/packet_repository.dart';
 import 'package:packet_inspector/data/services/ai/llm_provider_service.dart';
 import 'package:packet_inspector/data/services/database/packet_database_service.dart';
 import 'package:packet_inspector/data/services/parser/packet_dissector.dart';
-import 'package:packet_inspector/data/services/parser/pcap_binary_reader.dart';
+import 'package:network_suite_shared/network_suite_shared.dart'
+    hide SharedDeviceDatabase;
 import 'package:packet_inspector/data/services/storage/ai_settings_storage_service.dart';
 import 'package:packet_inspector/data/services/storage/protocol_library_service.dart';
 import 'package:packet_inspector/data/services/storage/shared_device_database.dart';

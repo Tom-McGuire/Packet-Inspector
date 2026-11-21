@@ -7,7 +7,7 @@ import '../../../domain/models/flow_diff_summary.dart';
 import '../../../domain/models/packet_diff_record.dart';
 import '../../database/diff_database_schema.dart';
 import '../parser/packet_dissector.dart';
-import '../parser/pcap_binary_reader.dart';
+import 'package:network_suite_shared/network_suite_shared.dart';
 import 'clock_skew_estimator.dart';
 
 /// Input descriptor for loading a capture into the multi-capture diff engine.

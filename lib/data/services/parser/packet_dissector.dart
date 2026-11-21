@@ -2,7 +2,7 @@ import 'dart:typed_data';
 import '../../../domain/models/custom_protocol_rule.dart';
 import '../../../domain/models/packet_record.dart';
 import '../diff/capture_fingerprint_service.dart';
-import 'pcap_binary_reader.dart';
+import 'package:network_suite_shared/network_suite_shared.dart';
 
 class DissectedPacketInfo {
   DissectedPacketInfo({

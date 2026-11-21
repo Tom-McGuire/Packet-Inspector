@@ -7,7 +7,7 @@ import 'package:packet_inspector/data/services/ai/cli_llm_service.dart';
 import 'package:packet_inspector/data/services/ai/llm_provider_service.dart';
 import 'package:packet_inspector/data/services/diff/multi_capture_diff_engine.dart';
 import 'package:packet_inspector/data/services/export/csv_export_service.dart';
-import 'package:packet_inspector/data/services/parser/pcap_binary_reader.dart';
+import 'package:network_suite_shared/network_suite_shared.dart';
 import 'package:packet_inspector/domain/models/packet_diff_record.dart';
 
 import 'e2e_test_harness.dart';
